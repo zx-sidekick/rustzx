@@ -1,6 +1,8 @@
 RustZX
 ===============================
 
+> **This is the [zx-sidekick](https://github.com/zx-sidekick) fork.** The `zx-sidekick` branch carries small patches to `rustzx-z80`; [ZX-SIDEKICK.md](ZX-SIDEKICK.md) says what they are and why. Everything else is upstream's, unchanged.
+
 [![RustZX CI](https://github.com/rustzx/rustzx/actions/workflows/ci.yml/badge.svg)](https://github.com/rustzx/rustzx/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/rustzx)](https://crates.io/crates/rustzx)
 [![License](https://img.shields.io/crates/l/rustzx)](https://github.com/rustzx/rustzx/blob/master/LICENSE.md)
