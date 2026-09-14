@@ -27,6 +27,7 @@ impl From<IntMode> for u8 {
 }
 
 /// Z80 Processor struct
+#[derive(Clone)]
 pub struct Z80 {
     /// Contains Z80 registers data
     pub regs: Regs,

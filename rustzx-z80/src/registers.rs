@@ -117,7 +117,7 @@ impl RegName16 {
 
 /// Z80 registers
 #[rustfmt::skip]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Regs {
     pc: u16,
     sp: u16,

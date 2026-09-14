@@ -1,3 +1,4 @@
+mod state;
 mod zexall;
 
 use rustzx_z80::Z80Bus;
