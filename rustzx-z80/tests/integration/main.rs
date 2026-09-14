@@ -1,3 +1,4 @@
+mod interrupt;
 mod state;
 mod zexall;
 
@@ -8,6 +9,8 @@ pub struct TestingBus {
     memory: Vec<u8>,
     breakpoints: HashSet<u16>,
     last_breakpoint: Option<u16>,
+    interrupt: bool,
+    clocks: usize,
 }
 
 impl TestingBus {
@@ -16,6 +19,8 @@ impl TestingBus {
             memory: vec![0; memory_size as usize],
             breakpoints: Default::default(),
             last_breakpoint: None,
+            interrupt: false,
+            clocks: 0,
         }
     }
 
@@ -40,6 +45,16 @@ impl TestingBus {
     pub fn last_breakpoint(&mut self) -> Option<u16> {
         self.last_breakpoint.take()
     }
+
+    /// Holds the maskable interrupt line active, or releases it.
+    pub fn set_interrupt(&mut self, active: bool) {
+        self.interrupt = active;
+    }
+
+    /// Clocks (T-states) waited so far.
+    pub fn clocks(&self) -> usize {
+        self.clocks
+    }
 }
 
 impl Z80Bus for TestingBus {
@@ -63,11 +78,17 @@ impl Z80Bus for TestingBus {
 
     fn write_io(&mut self, _port: u16, _data: u8) {}
 
-    fn wait_mreq(&mut self, _addr: u16, _clk: usize) {}
+    fn wait_mreq(&mut self, _addr: u16, clk: usize) {
+        self.clocks += clk;
+    }
 
-    fn wait_no_mreq(&mut self, _addr: u16, _clk: usize) {}
+    fn wait_no_mreq(&mut self, _addr: u16, clk: usize) {
+        self.clocks += clk;
+    }
 
-    fn wait_internal(&mut self, _clk: usize) {}
+    fn wait_internal(&mut self, clk: usize) {
+        self.clocks += clk;
+    }
 
     fn read_interrupt(&mut self) -> u8 {
         0
@@ -78,7 +99,7 @@ impl Z80Bus for TestingBus {
     fn halt(&mut self, _halted: bool) {}
 
     fn int_active(&self) -> bool {
-        false
+        self.interrupt
     }
 
     fn nmi_active(&self) -> bool {

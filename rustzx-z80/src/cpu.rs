@@ -26,6 +26,16 @@ impl From<IntMode> for u8 {
     }
 }
 
+/// What one call to [`Z80::step`] did
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    /// An interrupt (NMI or maskable) was taken. The program counter is at
+    /// its handler, whose first instruction has not run yet.
+    Interrupt,
+    /// One instruction ran.
+    Instruction,
+}
+
 /// Z80 Processor struct
 #[derive(Clone)]
 pub struct Z80 {
@@ -106,7 +116,8 @@ impl Z80 {
         execute_push_16(self, bus, RegName16::PC, 0);
     }
 
-    fn handle_interrupt(&mut self, bus: &mut impl Z80Bus) {
+    /// Takes an NMI or maskable interrupt if one is due. Returns whether one was taken.
+    fn handle_interrupt(&mut self, bus: &mut impl Z80Bus) -> bool {
         if bus.nmi_active() {
             // q resets during interrupt
             self.regs.clear_q();
@@ -128,6 +139,7 @@ impl Z80 {
 
             self.regs.inc_r();
             // 5 + 3 + 3 = 11 clocks
+            true
         } else if bus.int_active() && self.regs.get_iff1() {
             // q resets during interrupt
             self.regs.clear_q();
@@ -163,19 +175,57 @@ impl Z80 {
             }
             // mem_ptr is set to PC
             self.regs.set_mem_ptr(self.regs.get_pc());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Takes an interrupt if one is due and may be taken now. Returns whether one was taken.
+    fn check_interrupt(&mut self, bus: &mut impl Z80Bus) -> bool {
+        if !self.skip_interrupt {
+            self.handle_interrupt(bus)
+        } else {
+            // allow interrupts again
+            self.skip_interrupt = false;
+            false
         }
     }
 
     /// Perform next emulation step
+    ///
+    /// Takes a pending interrupt first, if one is due, and then runs one instruction. When an
+    /// interrupt is taken, the first instruction of its handler therefore runs in the same call.
+    /// Use [`Z80::step`] to have the interrupt as a step of its own.
     pub fn emulate(&mut self, bus: &mut impl Z80Bus) {
-        // check interrupts
-        if !self.skip_interrupt {
-            self.handle_interrupt(bus);
-        } else {
-            // allow interrupts again
-            self.skip_interrupt = false;
-        };
+        self.check_interrupt(bus);
+        self.execute_instruction(bus);
+    }
 
+    /// Perform next emulation step, with an interrupt as a step of its own
+    ///
+    /// Either takes a pending interrupt, if one is due, or runs one instruction; never both.
+    /// Calling `step` repeatedly runs a program as calling [`Z80::emulate`] repeatedly does, with
+    /// the same timing, as long as the bus stops reporting an NMI once it has been taken. The
+    /// difference is that after an interrupt the program counter is at the handler before any
+    /// of it has run. That is where a caller can see that an interrupt happened, keep the state
+    /// from just before its handler, or stop at a breakpoint on the handler's first instruction.
+    ///
+    /// After an interrupt, [`Z80Bus::pc_callback`] is called with the handler's address, as it
+    /// is after an instruction.
+    pub fn step(&mut self, bus: &mut impl Z80Bus) -> Step {
+        if self.check_interrupt(bus) {
+            bus.pc_callback(self.regs.get_pc());
+            Step::Interrupt
+        } else {
+            self.execute_instruction(bus);
+            Step::Instruction
+        }
+    }
+
+    /// Runs one instruction, or one more prefix of a chain of them, without looking at
+    /// interrupts
+    fn execute_instruction(&mut self, bus: &mut impl Z80Bus) {
         // Actions to be performed before any opcode execution
         let before_execute_opcode = |cpu: &mut Self| {
             // Save Q register value from previous emulation step, which is later used to
