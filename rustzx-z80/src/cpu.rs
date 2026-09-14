@@ -41,9 +41,13 @@ pub enum Step {
 pub struct Z80 {
     /// Contains Z80 registers data
     pub regs: Regs,
-    /// active if Z80 waiting for interrupt
+    /// Set while the processor is halted, waiting for an interrupt. The program counter stays at
+    /// the `HALT` instruction, which runs again on every step, and moves past it when an
+    /// interrupt is taken; so the handler returns to the instruction after `HALT`.
     pub halted: bool,
-    /// enabled if interrupt check will be skipped nex time
+    /// Set by an instruction after which an interrupt may not be taken yet (`EI`, `DI`, or a
+    /// `DD`/`FD` prefix followed by another prefix). The next step runs an instruction without
+    /// checking for interrupts, and clears it.
     pub skip_interrupt: bool,
     /// type of interrupt
     pub(crate) int_mode: IntMode,
