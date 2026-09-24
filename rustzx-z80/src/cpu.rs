@@ -183,6 +183,43 @@ impl Z80 {
         execute_push_16(self, bus, RegName16::PC, 0);
     }
 
+    /// Pushes `value` onto the stack, as `PUSH` does: SP goes down by 2 and `value` is stored at
+    /// the new SP, low byte first.
+    ///
+    /// For a caller acting on the processor between instructions. Memory is written with
+    /// [`Z80Bus::write_internal`], so no time passes and nothing is contended.
+    pub fn push(&mut self, bus: &mut impl Z80Bus, value: u16) {
+        let [low, high] = value.to_le_bytes();
+        let sp = self.regs.dec_sp();
+        bus.write_internal(sp, high);
+        let sp = self.regs.dec_sp();
+        bus.write_internal(sp, low);
+    }
+
+    /// Pops a value off the stack, as `POP` does: reads it at SP, low byte first, and moves SP up
+    /// by 2.
+    ///
+    /// For a caller acting on the processor between instructions. Memory is read with
+    /// [`Z80Bus::read_internal`], so no time passes and nothing is contended.
+    pub fn pop(&mut self, bus: &mut impl Z80Bus) -> u16 {
+        let low = bus.read_internal(self.regs.get_sp());
+        let high = bus.read_internal(self.regs.inc_sp());
+        self.regs.inc_sp();
+        u16::from_le_bytes([low, high])
+    }
+
+    /// Returns from a subroutine as `RET` does: pops PC, and sets MEMPTR to it. Like `RET`, it
+    /// leaves the flags alone, so a following `SCF` or `CCF` sees Q = 0.
+    ///
+    /// For a caller that answers a routine itself and then returns from it. No opcode is
+    /// fetched, so R is unchanged and no time passes; memory is read as by [`Z80::pop`].
+    pub fn ret(&mut self, bus: &mut impl Z80Bus) {
+        let pc = self.pop(bus);
+        self.regs.set_pc(pc);
+        self.regs.set_mem_ptr(pc);
+        self.regs.clear_q();
+    }
+
     /// Takes an NMI if one is due, or else a maskable interrupt if one is due and not held off.
     /// Returns whether one was taken.
     fn handle_interrupt(&mut self, bus: &mut impl Z80Bus, int_held: bool) -> bool {

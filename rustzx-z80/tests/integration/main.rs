@@ -3,6 +3,7 @@ mod corrections;
 mod emulate;
 mod fuse_flag_cases;
 mod interrupt;
+mod stack;
 mod state;
 mod step;
 mod zexall;
