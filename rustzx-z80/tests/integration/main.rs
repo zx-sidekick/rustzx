@@ -3,6 +3,7 @@ mod corrections;
 mod emulate;
 mod fuse_flag_cases;
 mod interrupt;
+mod run_until;
 mod stack;
 mod state;
 mod step;
@@ -34,6 +35,8 @@ pub struct TestingBus {
     breakpoints: HashSet<u16>,
     last_breakpoint: Option<u16>,
     interrupt: bool,
+    /// INT active for `.1` T-states out of every `.0`, from the bus's own clock
+    interrupt_period: Option<(usize, usize)>,
     nmi: bool,
     interrupt_data: u8,
     clocks: usize,
@@ -49,6 +52,7 @@ impl TestingBus {
             breakpoints: HashSet::default(),
             last_breakpoint: None,
             interrupt: false,
+            interrupt_period: None,
             nmi: false,
             interrupt_data: 0,
             clocks: 0,
@@ -82,6 +86,17 @@ impl TestingBus {
     /// Holds the maskable interrupt line active, or releases it.
     pub fn set_interrupt(&mut self, active: bool) {
         self.interrupt = active;
+    }
+
+    /// Makes the maskable interrupt line active for `length` T-states out of every `period`,
+    /// following the bus's clock, as a machine's frame interrupt does.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is 0.
+    pub fn set_interrupt_period(&mut self, period: usize, length: usize) {
+        assert!(period > 0, "an interrupt period of 0 T-states");
+        self.interrupt_period = Some((period, length));
     }
 
     /// Holds the non-maskable interrupt line active, or releases it.
@@ -245,7 +260,10 @@ impl Z80Bus for TestingBus {
     }
 
     fn int_active(&self) -> bool {
-        self.interrupt
+        match self.interrupt_period {
+            Some((period, length)) => self.clocks % period < length,
+            None => self.interrupt,
+        }
     }
 
     fn nmi_active(&self) -> bool {
