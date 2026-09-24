@@ -451,3 +451,79 @@ fn ld_a_i_then_interrupt_same_both_ways() {
     other_events.retain(|e| *e != Event::Pc(IM1_HANDLER));
     assert_eq!(events, other_events);
 }
+
+// --- A DD/FD prefix clears Q ---
+//
+// SCF and CCF set flags 3 and 5 from ((Q ^ F) | A), where Q is F if the previous instruction
+// changed the flags and 0 if not. A DD or FD prefix that does not apply to the next opcode is an
+// instruction of its own that leaves the flags alone, so it clears Q: redcode/Z80 runs a prefixed
+// SCF/CCF through `xy_xcf`, which does `Q = 0` first, and SingleStepTests expects the same.
+
+const F35: u8 = 0x28;
+
+/// LD B,0x28; INC B (flags changed, F3 and F5 set, so Q = F); then `tail`. Returns F3/F5.
+fn f35_after_inc_b_then(tail: &[u8]) -> u8 {
+    let mut program = vec![0x06, 0x28, 0x04];
+    program.extend_from_slice(tail);
+    let (mut cpu, mut bus) = machine(&program);
+    cpu.regs.set_iff1(false);
+    while usize::from(cpu.regs.get_pc() - PROGRAM) < program.len() {
+        cpu.emulate(&mut bus);
+    }
+    assert_eq!(cpu.regs.get_acc(), 0);
+    cpu.regs.get_flags() & F35
+}
+
+#[test]
+fn scf_after_flag_change_takes_f35_from_a_only() {
+    // Q = F, so (Q ^ F) | A = A = 0
+    assert_eq!(f35_after_inc_b_then(&[0x37]), 0);
+    assert_eq!(f35_after_inc_b_then(&[0x3F]), 0);
+}
+
+#[test]
+fn prefixed_scf_and_ccf_see_q_of_zero() {
+    for tail in [
+        &[0xDD, 0x37][..],
+        &[0xFD, 0x37],
+        &[0xDD, 0x3F],
+        &[0xFD, 0x3F],
+        &[0xDD, 0xFD, 0x37],
+    ] {
+        // Q = 0, so (Q ^ F) | A = F, which has F3 and F5 set
+        assert_eq!(f35_after_inc_b_then(tail), F35, "{tail:02x?}");
+    }
+}
+
+// --- Repeating block I/O sets MEMPTR to the instruction's address + 1 ---
+//
+// Like LDIR and CPIR, a repeating INIR, INDR, OTIR or OTDR sets MEMPTR to PC + 1 in the extra
+// M-cycle that moves PC back (rofl0r 2022, Manuel Sainz de Baranda y Goñi 2023; redcode/Z80's
+// INXR_OTXR_COMMON). When the instruction does not repeat, MEMPTR stays BC +/- 1 as for INI and
+// friends.
+
+/// Runs one step of ED `op` at PROGRAM with the given B and C. Returns (MEMPTR, PC).
+fn block_io(op: u8, b: u8) -> (u16, u16) {
+    let (mut cpu, mut bus) = machine(&[PREFIX_ED, op]);
+    cpu.regs.set_bc(u16::from_be_bytes([b, 0x10]));
+    cpu.regs.set_hl(0x9000);
+    cpu.emulate(&mut bus);
+    (cpu.regs.get_mem_ptr(), cpu.regs.get_pc())
+}
+
+#[test]
+fn repeating_block_io_sets_mem_ptr_to_pc_plus_one() {
+    for op in [0xB2, 0xBA, 0xB3, 0xBB] {
+        assert_eq!(block_io(op, 2), (PROGRAM + 1, PROGRAM), "ED {op:02X}");
+    }
+}
+
+#[test]
+fn last_block_io_iteration_keeps_bc_mem_ptr() {
+    // INIR/INDR: BC before B is decremented, +/- 1
+    assert_eq!(block_io(0xB2, 1), (0x0111, PROGRAM + 2));
+    assert_eq!(block_io(0xBA, 1), (0x010F, PROGRAM + 2));
+    // OTIR/OTDR: BC after B is decremented, +/- 1
+    assert_eq!(block_io(0xB3, 1), (0x0011, PROGRAM + 2));
+    assert_eq!(block_io(0xBB, 1), (0x000F, PROGRAM + 2));
+}

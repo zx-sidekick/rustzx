@@ -327,6 +327,9 @@ impl Z80 {
                         }
                         Prefix::None => {
                             let opcode = Opcode::from_byte(byte2);
+                            // The prefix is an instruction of its own that leaves the flags
+                            // alone, so the opcode after it sees Q = 0 (it matters to SCF/CCF)
+                            self.regs.clear_q();
                             before_execute_opcode(self);
                             execute_normal(self, bus, opcode, prefix_single);
                         }

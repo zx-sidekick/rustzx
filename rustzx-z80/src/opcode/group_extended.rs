@@ -330,6 +330,8 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         U3::N6 => {
                             let m = execute_ini_ind(cpu, bus, BlockDir::Inc);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_hl().wrapping_sub(1), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
@@ -340,6 +342,8 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         U3::N7 => {
                             let m = execute_ini_ind(cpu, bus, BlockDir::Dec);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_hl().wrapping_add(1), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
@@ -367,6 +371,8 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         U3::N6 => {
                             let m = execute_outi_outd(cpu, bus, BlockDir::Inc);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_bc(), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
@@ -377,6 +383,8 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         U3::N7 => {
                             let m = execute_outi_outd(cpu, bus, BlockDir::Dec);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_bc(), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();

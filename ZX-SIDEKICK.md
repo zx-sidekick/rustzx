@@ -80,6 +80,8 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 - A second NMI is not taken straight after an NMI response: at least one instruction of the handler runs first (found in 2022 by Manuel Sainz de Baranda y Goñi). On the chip, an NMI edge during the response itself is lost; here it waits for that instruction, since `emulate()` cannot tell the two apart and `step()` has to run a program as `emulate()` does.
 - `RETI` and `RETN` copy IFF2 into IFF1 during the next opcode fetch, so when that changes IFF1 (only after an NMI) a maskable interrupt is not taken straight after them (found by Andre Weissflog in 2021).
 - After `LD A,I` or `LD A,R`, a maskable interrupt accepted straight away leaves P/V at 0, as on an NMOS Z80 (Zilog, *Z80 Family Data Book*, 1989).
+- A `DD` or `FD` prefix that doesn't apply to the next opcode is an instruction of its own that leaves the flags alone, so it clears Q: a prefixed `SCF` or `CCF` takes flags 3 and 5 from `F | A`, not `(Q ^ F) | A` (as in redcode/Z80 and SingleStepTests).
+- A repeating `INIR`, `INDR`, `OTIR` or `OTDR` sets MEMPTR to the instruction's address + 1, as `LDIR` does (found by rofl0r in 2022 and Manuel Sainz de Baranda y Goñi in 2023). z80test 1.2a corrected its `INIR->NOP'`/`INDR->NOP'` MEMPTR checksums for this; `rustzx-test` now bundles 1.2a's `z80memptr`, which the fork passes and upstream fails.
 - `CodegenMemorySpace::write_word` wrote both bytes to the same address; `CodeGenerator` panicked in a debug build when it wrote past `0xFFFF`; and code it writes into a bus is stored with `write_internal`, so it no longer waits (or is contended) as if the processor had written it.
 
 `emulate.rs` still passes unchanged on upstream `master`: none of these is on a path it pins. Its long run's NMI handler re-enables interrupts with `EI` before `RETN`, so that `RETN` leaves IFF1 alone and the run stays on behaviour both share.
@@ -105,7 +107,12 @@ cargo test --release -p rustzx-z80 -- --include-ignored
 cargo test --release -p rustzx-test -- --ignored z80full z80ccf z80memptr
 ```
 
-On the `zx-sidekick` branch, on 24 September 2026: 145 tests in `rustzx-z80` pass, including all of zexall and the 78 tests of the patches' behaviour, and the three z80test suites pass. `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does outside the corrections in patch 5. Before those corrections, ZX Sidekick's Fuse corpus harness gave the same result on this crate as on 0.16.0 (it has not been run since): 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335.
+On the `zx-sidekick` branch, on 24 September 2026: 149 tests in `rustzx-z80` pass, including all of zexall and the 82 tests of the patches' behaviour, and the three z80test suites pass (`z80memptr` from 1.2a). `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does outside the corrections in patch 5. Against other emulators' test data (24 September 2026, harnesses not in this repository):
+
+- Fuse's own core tests (`z80/tests`, 1,356 cases, registers, memory, T-states and every timed memory access): 1,346 match exactly, up from 1,345 on upstream (the fork fixes the two MEMPTR cases Fuse checks, `32` and `d3_4`). Of the other 10, 5 are Fuse's log leaving out the displacement read of a `JR cc`/`DJNZ` that doesn't jump (the Z80 does read it), and 5 are repeating block instructions, whose flags and MEMPTR Fuse doesn't emulate as later research found them.
+- SingleStepTests/z80 (1,604,000 cases, generated from the Ares core): 1,594,038 match. The rest are `HALT`, where they have PC move past it while this crate keeps it on the `HALT` (as Fuse and floooh's chips do; the address an interrupt pushes is the same), and their `ei` field, which means "last instruction was `EI`" where `skip_interrupt` is also set by `DI` and by the `RETN` hold-off.
+
+Before those corrections, ZX Sidekick's Fuse corpus harness gave the same result on this crate as on 0.16.0 (it has not been run since): 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335.
 
 ## Keeping up with upstream
 
