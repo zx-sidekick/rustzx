@@ -88,7 +88,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     // emulate read byte without pc shift
                     let offset = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                     // preform jump if needed
-                    if cpu.regs.dec_reg_8(RegName8::B) != 0 {
+                    if cpu.regs.dec_b() != 0 {
                         bus.wait_loop(cpu.regs.get_pc(), 5);
                         cpu.regs.shift_pc(offset);
                         cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_add(1));

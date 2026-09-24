@@ -146,6 +146,7 @@ pub struct Regs {
 
 impl Regs {
     #[must_use]
+    #[inline]
     pub fn get_reg_8(&self, index: RegName8) -> u8 {
         match index {
             RegName8::A => self.a,
@@ -165,6 +166,7 @@ impl Regs {
         }
     }
 
+    #[inline]
     pub fn set_reg_8(&mut self, index: RegName8, value: u8) -> u8 {
         match index {
             RegName8::A => self.a = value,
@@ -186,6 +188,7 @@ impl Regs {
     }
 
     #[must_use]
+    #[inline]
     pub fn get_reg_16(&self, index: RegName16) -> u16 {
         match index {
             RegName16::PC => self.pc,
@@ -206,6 +209,7 @@ impl Regs {
         }
     }
 
+    #[inline]
     pub fn set_reg_16(&mut self, index: RegName16, value: u16) -> u16 {
         let [l, h] = value.to_le_bytes();
         match index {
@@ -240,24 +244,62 @@ impl Regs {
         value
     }
 
+    #[inline]
     pub fn inc_reg_8(&mut self, reg: RegName8) -> u8 {
         let data = self.get_reg_8(reg).wrapping_add(1);
         self.set_reg_8(reg, data)
     }
 
+    #[inline]
     pub fn inc_reg_16(&mut self, reg: RegName16) -> u16 {
         let data = self.get_reg_16(reg).wrapping_add(1);
         self.set_reg_16(reg, data)
     }
 
+    #[inline]
     pub fn dec_reg_8(&mut self, reg: RegName8) -> u8 {
         let data = self.get_reg_8(reg).wrapping_sub(1);
         self.set_reg_8(reg, data)
     }
 
+    #[inline]
     pub fn dec_reg_16(&mut self, reg: RegName16) -> u16 {
         let data = self.get_reg_16(reg).wrapping_sub(1);
         self.set_reg_16(reg, data)
+    }
+
+    // Direct access to the registers the block instructions name, rather than through
+    // `RegName16`/`RegName8`, which they would decode on every byte they move.
+
+    #[inline]
+    pub(crate) fn inc_hl(&mut self) -> u16 {
+        self.set_hl(self.get_hl().wrapping_add(1))
+    }
+
+    #[inline]
+    pub(crate) fn dec_hl(&mut self) -> u16 {
+        self.set_hl(self.get_hl().wrapping_sub(1))
+    }
+
+    #[inline]
+    pub(crate) fn inc_de(&mut self) -> u16 {
+        self.set_de(self.get_de().wrapping_add(1))
+    }
+
+    #[inline]
+    pub(crate) fn dec_de(&mut self) -> u16 {
+        self.set_de(self.get_de().wrapping_sub(1))
+    }
+
+    #[inline]
+    pub(crate) fn dec_bc(&mut self) -> u16 {
+        self.set_bc(self.get_bc().wrapping_sub(1))
+    }
+
+    #[inline]
+    pub(crate) fn dec_b(&mut self) -> u8 {
+        self.b = self.b.wrapping_sub(1);
+        self.b
     }
 
     pub(crate) fn build_addr_with_offset(&mut self, reg: RegName16, displacement: i8) -> u16 {
