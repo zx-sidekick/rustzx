@@ -1,9 +1,10 @@
 use crate::{
+    alu::add16_flags,
     opcode::{execute_alu_8, execute_pop_16, execute_push_16, LoadOperand8, Opcode, Prefix},
     smallnum::{U1, U2, U3},
     tables::{
-        lookup16_r12, lookup8_r12, F3F5_TABLE, HALF_CARRY_ADD_TABLE, HALF_CARRY_SUB_TABLE,
-        SZF3F5_TABLE, SZPF3F5_TABLE,
+        lookup8_r12, F3F5_TABLE, HALF_CARRY_ADD_TABLE, HALF_CARRY_SUB_TABLE, SZF3F5_TABLE,
+        SZPF3F5_TABLE,
     },
     RegName16, RegName8, Regs, Z80Bus, FLAG_CARRY, FLAG_F3, FLAG_F5, FLAG_HALF_CARRY, FLAG_PV,
     FLAG_SIGN, FLAG_SUB, FLAG_ZERO, Z80,
@@ -141,16 +142,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let acc = cpu.regs.get_reg_16(reg_acc);
                     cpu.regs.set_mem_ptr(acc.wrapping_add(1));
                     let operand = cpu.regs.get_reg_16(reg_operand);
-                    let temp: u32 = u32::from(acc).wrapping_add(u32::from(operand));
-                    // watch tables module
-                    let lookup = lookup16_r12(acc, operand, temp as u16);
-                    // get last flags, reset affected by instruction
-                    let mut flags = cpu.regs.get_flags() & (FLAG_ZERO | FLAG_PV | FLAG_SIGN);
-                    flags |= HALF_CARRY_ADD_TABLE[(lookup & 0x07) as usize];
-                    flags |= u8::from(temp > 0xFFFF) * FLAG_CARRY;
-                    flags |= F3F5_TABLE[((temp >> 8) as u8) as usize];
+                    let (sum, flags) = add16_flags(cpu.regs.get_flags(), acc, operand);
                     cpu.regs.set_flags(flags);
-                    cpu.regs.set_reg_16(reg_acc, temp as u16);
+                    cpu.regs.set_reg_16(reg_acc, sum);
                 }
             }
         }

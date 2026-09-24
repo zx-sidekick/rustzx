@@ -88,6 +88,12 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 
 The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladimir Kladov), and against [redcode/Z80](https://github.com/redcode/Z80), whose interrupt handling cites Zilog's documentation and checks with Visual Z80 Remix; the `LD A,I` bug is in Zilog's *Z80 Family Data Book* (1989), pp. 412-413.
 
+### 6. `alu::add16_flags`: the 16-bit add's flags, public
+
+**Problem.** ZX Sidekick answers the ROM's multiply (`HL = HL * DE`) itself, and has to leave F exactly as the ROM's `ADD HL,HL` and `ADD HL,DE` would. It kept a hand-written copy of `ADD HL,ss`'s flag rules, which only a test on its side kept in step with this crate's.
+
+**Change.** A public `alu` module with `add16_flags(flags, a, b) -> (sum, flags)`, the arithmetic of `ADD HL,ss`, `ADD IX,ss` and `ADD IY,ss`. The instruction calls it, so the two cannot drift apart. MEMPTR, which the instruction also sets, is left to the caller. Tested in `tests/integration/alu.rs`: values worked out by hand from the flag rules, and agreement with the instruction for every prefix, source register and starting F.
+
 ## Using it
 
 The crate's name and version are unchanged, so it replaces the published crate for a project that depends on `rustzx-z80 = "0.16"`:

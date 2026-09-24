@@ -1,3 +1,4 @@
+mod alu;
 mod corrections;
 mod emulate;
 mod interrupt;
