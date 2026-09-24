@@ -65,7 +65,7 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 
 ### 4. No `unsafe`, and pedantic clippy
 
-**Change.** `rustzx-z80/Cargo.toml` forbids `unsafe` code (there was none) and denies clippy's pedantic lints, so `cargo clippy -p rustzx-z80 --all-targets` fails on any warning. The code was brought in line without changing behaviour: explicit `u16::from` widening, `cast_signed()` for displacement bytes, `wrapping_add_signed` for relative addresses, `#[must_use]` on getters, reasons on the ignored zexall tests. Two lints are relaxed, each with its reason written next to it: truncating casts (a Z80 takes the low byte of wider results everywhere), and the length of the two opcode dispatch functions (one match arm per opcode group).
+**Change.** `rustzx-z80/Cargo.toml` forbids `unsafe` code (there was none) and denies clippy's pedantic lints, so `cargo clippy -p rustzx-z80 --all-targets` fails on any of them (CI adds `-D warnings` for the rest). It also declares `rust-version = "1.87"`, which CI checks. The code was brought in line without changing behaviour: explicit `u16::from` widening, `cast_signed()` for displacement bytes, `wrapping_add_signed` for relative addresses, `#[must_use]` on getters, reasons on the ignored zexall tests. Two lints are relaxed, each with its reason written next to it: truncating casts (a Z80 takes the low byte of wider results everywhere), and the length of the two opcode dispatch functions (one match arm per opcode group).
 
 ### 5. Corrections
 
@@ -107,12 +107,14 @@ Pin a commit rather than the branch, so a rebase here cannot change a build. Thi
 
 ## How it is checked
 
-`.github/workflows/test-rustzx-z80.yml` runs these on every pull request, and on every push to `zx-sidekick` that touches the processor: format, clippy, the unit tests, zexall in two batches, and the z80test suites. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs on `master`. `zx-sidekick` requires all five jobs to pass, on a branch up to date with it, before a pull request can be merged.
+`.github/workflows/test-rustzx-z80.yml` runs these on every pull request, and on every push to `zx-sidekick` that touches the processor: format, clippy, the unit tests (in a debug build, so overflow checks are on), zexall in two batches, and the z80test suites with the block instruction flags test; and, not required, a build with the minimum Rust version. Clippy runs on a pinned toolchain, moved on purpose, so a new clippy lint can't fail every PR at once. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs for `master` and pull requests into it. `zx-sidekick` requires all five jobs to pass, on a branch up to date with it, before a pull request can be merged.
 
 ```
-cargo clippy -p rustzx-z80 --all-targets
+cargo fmt -p rustzx-z80 -- --check
+cargo clippy -p rustzx-z80 --all-targets -- -D warnings
+cargo test -p rustzx-z80
 cargo test --release -p rustzx-z80 -- --include-ignored
-cargo test --release -p rustzx-test -- --ignored z80full z80ccf z80memptr
+cargo test --release -p rustzx-test --test z80test -- --include-ignored
 ```
 
 On the `zx-sidekick` branch, on 24 September 2026: 149 tests in `rustzx-z80` pass, including all of zexall and the 82 tests of the patches' behaviour, and the three z80test suites pass (`z80memptr` from 1.2a). `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does outside the corrections in patch 5. Against other emulators' test data (24 September 2026, harnesses not in this repository):

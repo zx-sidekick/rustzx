@@ -23,7 +23,6 @@ pub const fn flag_pos(flag: u8) -> u8 {
 /// 8-bit register names
 #[derive(Clone,Copy)]
 #[rustfmt::skip]
-#[allow(clippy::upper_case_acronyms)]
 pub enum RegName8 {
     A, F,
     B, C,
@@ -76,7 +75,6 @@ impl RegName8 {
 /// 16-bit register names
 #[derive(Clone,Copy)]
 #[rustfmt::skip]
-#[allow(clippy::upper_case_acronyms)]
 pub enum RegName16 {
     PC, SP,
     AF, BC,
