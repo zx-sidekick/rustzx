@@ -18,6 +18,13 @@ fn add16_flags_by_hand() {
     assert_eq!(add16_flags(0x00, 0x8000, 0x8000), (0x0000, FLAG_C));
     // S, Z and P/V kept; H, N, C and bits 3 and 5 all replaced
     assert_eq!(add16_flags(0xFF, 0x0000, 0x0000), (0x0000, 0xC4));
+    // H is bit 11's carry, not bit 3's or bit 10's
+    assert_eq!(add16_flags(0x00, 0x0800, 0x0800), (0x1000, FLAG_H));
+    assert_eq!(add16_flags(0x00, 0x0400, 0x0400), (0x0800, 0x08)); // F3 from the high byte 0x08
+    assert_eq!(add16_flags(0x00, 0x0080, 0x0080), (0x0100, 0x00));
+    assert_eq!(add16_flags(0x00, 0x0008, 0x0008), (0x0010, 0x00));
+    // C only past 0xFFFF, not at it
+    assert_eq!(add16_flags(0x00, 0xFFFF, 0x0000), (0xFFFF, 0x28));
     // bits 3 and 5 from the sum's high byte, not the operands'
     assert_eq!(add16_flags(0x00, 0x2000, 0x0800), (0x2800, 0x28));
     assert_eq!(add16_flags(0x00, 0x0028, 0x0000), (0x0028, 0x00));
