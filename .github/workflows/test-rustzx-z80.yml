@@ -1,7 +1,8 @@
 name: rustzx-z80 tests
 
-# Runs on the fork's branch and on every pull request (including ones stacked on other
-# branches), whenever the processor, its z80test suites, or this workflow change.
+# Runs on every pull request, whatever it changes, because zx-sidekick requires these checks
+# before merging: a PR they didn't run on could never be merged. Pushes to the fork's branch run
+# only when the processor, its z80test suites, or this workflow change.
 on:
   push:
     branches: [ master, zx-sidekick ]
@@ -12,12 +13,6 @@ on:
       - 'Cargo.lock'
       - '.github/workflows/test-rustzx-z80.yml'
   pull_request:
-    paths:
-      - 'rustzx-z80/**'
-      - 'rustzx-test/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/test-rustzx-z80.yml'
   workflow_dispatch:
 
 env:
