@@ -126,6 +126,11 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                 U3::N5 => {
                     // RETN and even RETI should copy iff2 into iff1
                     let iff2 = cpu.regs.get_iff2();
+                    // The copy takes effect during the next opcode fetch, so when it changes IFF1
+                    // (only after an NMI) a maskable interrupt is not taken straight after
+                    if cpu.regs.get_iff1() != iff2 {
+                        cpu.skip_interrupt = true;
+                    }
                     cpu.regs.set_iff1(iff2);
                     execute_pop_16(cpu, bus, RegName16::PC, 3);
                     cpu.regs.set_mem_ptr(cpu.regs.get_pc());

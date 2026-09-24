@@ -14,12 +14,18 @@ const PREFIX_ED: u8 = 0xED;
 const LD_A_I: u8 = 0x57;
 const LD_A_R: u8 = 0x5F;
 const DI: u8 = 0xF3;
+const EI: u8 = 0xFB;
 
 const FLAG_PV: u8 = 0x04;
 const IM1_HANDLER: u16 = 0x0038;
 const NMI_HANDLER: u16 = 0x0066;
 const PROGRAM: u16 = 0x8000;
 const STACK: u16 = 0xC000;
+
+fn return_address(cpu: &Z80, bus: &mut TestingBus) -> u16 {
+    let sp = cpu.regs.get_sp();
+    u16::from_le_bytes([bus.read_memory(sp), bus.read_memory(sp + 1)])
+}
 
 fn machine(program: &[u8]) -> (Z80, TestingBus) {
     let mut bus = TestingBus::new(0x10000);
@@ -197,34 +203,32 @@ fn nmi_raised_again_is_taken_again() {
     assert_eq!(cpu.regs.get_sp(), STACK - 4);
 }
 
-/// An NMI pulse that ends while interrupts are held off (here, after DI) is still taken once
-/// they are allowed again.
+/// DD FD 21 34 12: a chain of prefixes and then LD IY,0x1234. No interrupt of either kind is taken
+/// until the chain has its instruction.
+const PREFIX_CHAIN: [u8; 6] = [0xDD, 0xFD, 0x21, 0x34, 0x12, NOP];
+
+/// An NMI pulse that ends while a prefix chain holds interrupts off is still taken after it.
 #[test]
-fn nmi_pulse_during_deferral_is_latched() {
-    let (mut cpu, mut bus) = machine(&[DI, NOP, NOP]);
+fn nmi_pulse_during_prefix_chain_is_latched() {
+    let (mut cpu, mut bus) = machine(&PREFIX_CHAIN);
 
     cpu.emulate(&mut bus);
     bus.set_nmi(true);
     cpu.emulate(&mut bus);
     bus.set_nmi(false);
-    assert_eq!(cpu.regs.get_pc(), PROGRAM + 2);
+    assert_eq!(cpu.regs.get_pc(), PROGRAM + 5);
+    assert_eq!(cpu.regs.get_iy(), 0x1234);
 
     cpu.emulate(&mut bus);
 
     assert_eq!(cpu.regs.get_pc(), NMI_HANDLER + 1);
-    assert_eq!(
-        u16::from_le_bytes([
-            bus.read_memory(cpu.regs.get_sp()),
-            bus.read_memory(cpu.regs.get_sp() + 1)
-        ]),
-        PROGRAM + 2
-    );
+    assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 5);
 }
 
 /// A clone carries a latched NMI with it.
 #[test]
 fn clone_keeps_latched_nmi() {
-    let (mut cpu, mut bus) = machine(&[DI, NOP, NOP]);
+    let (mut cpu, mut bus) = machine(&PREFIX_CHAIN);
     cpu.emulate(&mut bus);
     bus.set_nmi(true);
     cpu.emulate(&mut bus);
@@ -239,11 +243,154 @@ fn clone_keeps_latched_nmi() {
     assert_eq!(snapshot(&copy), snapshot(&cpu));
 }
 
+// --- EI and DI hold off only the maskable interrupt ---
+//
+// The Z80 does not accept a maskable interrupt straight after EI, but the NMI is not affected:
+// redcode/Z80's NMI response has no such check, only its INT response does.
+
+fn nmi_straight_after(first: u8) -> (Z80, TestingBus) {
+    let (mut cpu, mut bus) = machine(&[first, NOP, NOP]);
+    cpu.regs.set_iff1(false);
+    cpu.regs.set_iff2(false);
+    cpu.emulate(&mut bus);
+    bus.set_nmi(true);
+    cpu.emulate(&mut bus);
+    (cpu, bus)
+}
+
+#[test]
+fn nmi_is_taken_straight_after_ei() {
+    let (cpu, mut bus) = nmi_straight_after(EI);
+
+    assert_eq!(cpu.regs.get_pc(), NMI_HANDLER + 1);
+    assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 1);
+    // EI set both; the NMI clears IFF1 only
+    assert!(!cpu.regs.get_iff1());
+    assert!(cpu.regs.get_iff2());
+}
+
+#[test]
+fn nmi_is_taken_straight_after_di() {
+    let (cpu, mut bus) = nmi_straight_after(DI);
+
+    assert_eq!(cpu.regs.get_pc(), NMI_HANDLER + 1);
+    assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 1);
+}
+
+#[test]
+fn int_still_waits_one_instruction_after_ei() {
+    let (mut cpu, mut bus) = machine(&[EI, NOP, NOP]);
+    cpu.regs.set_iff1(false);
+    cpu.regs.set_iff2(false);
+    cpu.emulate(&mut bus);
+    bus.set_interrupt(true);
+
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 2);
+}
+
+// --- No second NMI straight after an NMI response ---
+//
+// The Z80 does not start a second NMI response straight after one; at least one instruction of
+// the handler runs first (Manuel Sainz de Baranda y Goñi, 2022, checked with Visual Z80 Remix).
+
+/// An edge seen at the first check after an NMI response (possible when that NMI was latched
+/// earlier and the line had gone inactive) waits for one handler instruction, then is taken.
+#[test]
+fn nmi_edge_straight_after_nmi_waits_and_is_then_taken() {
+    let (mut cpu, mut bus) = machine(&PREFIX_CHAIN);
+    bus.load_to_memory(&[NOP; 4], NMI_HANDLER);
+    cpu.emulate(&mut bus);
+    bus.set_nmi(true);
+    assert_eq!(cpu.step(&mut bus), Step::Instruction); // finishes the chain, NMI latched
+    bus.set_nmi(false);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt); // the latched NMI; the line is low
+    let (mut other, mut other_bus) = (cpu.clone(), bus.clone());
+    bus.set_nmi(true);
+    other_bus.set_nmi(true);
+
+    // step: the handler's first instruction, then the second NMI, then its first instruction
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    assert_eq!(cpu.regs.get_pc(), NMI_HANDLER + 1);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    // emulate: the same in two calls
+    other.emulate(&mut other_bus);
+    other.emulate(&mut other_bus);
+
+    assert_eq!(cpu.regs.get_sp(), STACK - 4);
+    assert_eq!(snapshot(&cpu), snapshot(&other));
+    assert_eq!(bus.clocks(), other_bus.clocks());
+}
+
+// --- RETI/RETN that change IFF1 hold off a maskable interrupt ---
+//
+// RETN and RETI copy IFF2 into IFF1 during the next instruction's opcode fetch, so when that
+// changes IFF1 (only possible after an NMI) a maskable interrupt is not accepted straight after
+// (Andre Weissflog, 2021; stardot.org.uk "New discovery on Z80 interrupts", 2022).
+
+const RETN: u8 = 0x45;
+const RETI: u8 = 0x4D;
+
+/// Takes an NMI with interrupts enabled, returns from it with `ret` (RETN or RETI), and then
+/// raises INT. Returns what the two steps after the return did, and where the interrupt returns
+/// to.
+fn int_after_return_from_nmi(ret: u8) -> (Step, Step, u16) {
+    let (mut cpu, mut bus) = machine(&[NOP; 4]);
+    bus.load_to_memory(&[PREFIX_ED, ret], NMI_HANDLER);
+    bus.load_to_memory(&[NOP], IM1_HANDLER);
+
+    bus.set_nmi(true);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    assert!(!cpu.regs.get_iff1());
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    assert_eq!(cpu.regs.get_pc(), PROGRAM);
+    assert!(cpu.regs.get_iff1());
+
+    bus.set_interrupt(true);
+    let first = cpu.step(&mut bus);
+    let second = cpu.step(&mut bus);
+    (first, second, return_address(&cpu, &mut bus))
+}
+
+#[test]
+fn retn_that_enables_interrupts_holds_int_one_instruction() {
+    assert_eq!(
+        int_after_return_from_nmi(RETN),
+        (Step::Instruction, Step::Interrupt, PROGRAM + 1)
+    );
+}
+
+#[test]
+fn reti_that_enables_interrupts_holds_int_one_instruction() {
+    assert_eq!(
+        int_after_return_from_nmi(RETI),
+        (Step::Instruction, Step::Interrupt, PROGRAM + 1)
+    );
+}
+
+/// RETN that leaves IFF1 as it is holds nothing off.
+#[test]
+fn retn_that_keeps_iff1_does_not_hold_int() {
+    let (mut cpu, mut bus) = machine(&[PREFIX_ED, RETN]);
+    cpu.regs.set_sp(STACK - 2);
+    bus.load_to_memory(&[0x00, 0x90], STACK - 2);
+    bus.load_to_memory(&[NOP], IM1_HANDLER);
+
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    assert_eq!(cpu.regs.get_pc(), 0x9000);
+    bus.set_interrupt(true);
+
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    assert_eq!(return_address(&cpu, &mut bus), 0x9000);
+}
+
 // --- LD A,I and LD A,R ---
 //
 // On an NMOS Z80, if a maskable interrupt is accepted straight after LD A,I or LD A,R, the P/V
-// flag they set from IFF2 reads as 0, because IFF2 is reset while it is being read (Fuse
-// emulates this; the CMOS Z80 does not do it).
+// flag they set from IFF2 reads as 0, because IFF2 is reset while it is being read (Zilog,
+// "Z80 Family Data Book", 1989, pp. 412-413; the CMOS Z80 does not do it).
 
 fn pv_after_interrupt(program: &[u8], int_after: usize, nmi: bool) -> bool {
     let (mut cpu, mut bus) = machine(program);

@@ -237,9 +237,11 @@ fn chained_ei_defers_interrupt_step() {
     check_deferred(&[EI, EI, EI, NOP], 3, Line::Int);
 }
 
+/// `EI` and `DI` hold off only the maskable interrupt; an NMI is taken straight after them.
 #[test]
-fn di_defers_nmi_step() {
-    check_deferred(&[DI, NOP, NOP], 1, Line::Nmi);
+fn ei_and_di_do_not_defer_nmi_step() {
+    check_deferred(&[DI, NOP, NOP], 0, Line::Nmi);
+    check_deferred(&[EI, NOP, NOP], 0, Line::Nmi);
 }
 
 #[test]

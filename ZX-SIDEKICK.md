@@ -61,7 +61,7 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 
 **Already upstream.** Upstream `master` made both fields public (for SZX snapshot loading) after 0.16.0; it has not been released. Their comments described them from inside the crate.
 
-**Change.** The comments now say what a caller needs: while halted, the program counter stays at the `HALT` and moves past it when an interrupt is taken; `skip_interrupt` is set by `EI`, `DI` and chained `DD`/`FD` prefixes, and holds off interrupts for one step. `tests/integration/interrupt.rs` restores a halted state and checks where the interrupt returns.
+**Change.** The comments now say what a caller needs: while halted, the program counter stays at the `HALT` and moves past it when an interrupt is taken; `skip_interrupt` is set by `EI`, `DI` and chained `DD`/`FD` prefixes, and holds off interrupts for one step. (Patch 5 narrows it to maskable interrupts, which is what the SZX format's "EI last" flag means.) `tests/integration/interrupt.rs` restores a halted state and checks where the interrupt returns.
 
 ### 4. No `unsafe`, and pedantic clippy
 
@@ -75,11 +75,16 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 
 - `Regs::get_h_alt` and `get_l_alt` returned `H` and `L`, not `H'` and `L'`, so `rustzx-core` saved SNA snapshots with the wrong `HL'`.
 - MEMPTR after `LD (nn),A` kept the high byte of `nn + 1`, and after `OUT (n),A` carried `n + 1` into the high byte when `n` was `0xFF`. Both are now `A` in the high byte and the low byte of the address plus one, as documented in "MEMPTR, esoteric register of the Zilog Z80 CPU". It shows in `F3`/`F5` after a following `BIT n,(HL)`.
-- NMI is edge-triggered, as on the Z80: the line going active latches one NMI, however long it then stays active, and a short pulse is kept while interrupts are held off. Upstream took an NMI on every instruction while the line was active, so a bus had to release it at exactly the right moment.
-- After `LD A,I` or `LD A,R`, a maskable interrupt accepted straight away leaves P/V at 0, as on an NMOS Z80 (and in Fuse).
+- NMI is edge-triggered, as on the Z80: the line going active latches one NMI, however long it then stays active. Upstream took an NMI on every instruction while the line was active, so a bus had to release it at exactly the right moment.
+- `EI` and `DI` hold off only the maskable interrupt; an NMI is taken straight after them. Only an unfinished chain of `DD`/`FD` prefixes holds off both, and an NMI that arrives during one is kept until the chain has its instruction. Upstream held the NMI off after `EI` and `DI` too.
+- A second NMI is not taken straight after an NMI response: at least one instruction of the handler runs first (found in 2022 by Manuel Sainz de Baranda y Goñi). On the chip, an NMI edge during the response itself is lost; here it waits for that instruction, since `emulate()` cannot tell the two apart and `step()` has to run a program as `emulate()` does.
+- `RETI` and `RETN` copy IFF2 into IFF1 during the next opcode fetch, so when that changes IFF1 (only after an NMI) a maskable interrupt is not taken straight after them (found by Andre Weissflog in 2021).
+- After `LD A,I` or `LD A,R`, a maskable interrupt accepted straight away leaves P/V at 0, as on an NMOS Z80 (Zilog, *Z80 Family Data Book*, 1989).
 - `CodegenMemorySpace::write_word` wrote both bytes to the same address; `CodeGenerator` panicked in a debug build when it wrote past `0xFFFF`; and code it writes into a bus is stored with `write_internal`, so it no longer waits (or is contended) as if the processor had written it.
 
-`emulate.rs` still passes unchanged on upstream `master`: none of these is on a path it pins.
+`emulate.rs` still passes unchanged on upstream `master`: none of these is on a path it pins. Its long run's NMI handler re-enables interrupts with `EI` before `RETN`, so that `RETN` leaves IFF1 alone and the run stays on behaviour both share.
+
+The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladimir Kladov), and against [redcode/Z80](https://github.com/redcode/Z80), whose interrupt handling cites Zilog's documentation and checks with Visual Z80 Remix; the `LD A,I` bug is in Zilog's *Z80 Family Data Book* (1989), pp. 412-413.
 
 ## Using it
 
@@ -100,7 +105,7 @@ cargo test --release -p rustzx-z80 -- --include-ignored
 cargo test --release -p rustzx-test -- --ignored z80full z80ccf z80memptr
 ```
 
-On the `zx-sidekick` branch, on 24 September 2026: 139 tests in `rustzx-z80` pass, including all of zexall and the 72 tests of the patches' behaviour, and the three z80test suites pass. `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does outside the corrections in patch 5. Before those corrections, ZX Sidekick's Fuse corpus harness gave the same result on this crate as on 0.16.0 (it has not been run since): 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335.
+On the `zx-sidekick` branch, on 24 September 2026: 145 tests in `rustzx-z80` pass, including all of zexall and the 78 tests of the patches' behaviour, and the three z80test suites pass. `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does outside the corrections in patch 5. Before those corrections, ZX Sidekick's Fuse corpus harness gave the same result on this crate as on 0.16.0 (it has not been run since): 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335.
 
 ## Keeping up with upstream
 
