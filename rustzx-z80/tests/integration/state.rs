@@ -9,6 +9,7 @@ const INC_A: u8 = 0x3C;
 #[test]
 fn clone_is_independent_of_original() {
     let mut bus = TestingBus::new(0x10000);
+    bus.record_events();
     bus.load_to_memory(&[LD_A_N, 0x42, INC_A], 0x8000);
     let mut cpu = Z80::default();
     cpu.regs.set_pc(0x8000);
@@ -44,6 +45,7 @@ fn clone_keeps_halted_skip_interrupt_and_mode() {
 fn clone_mid_prefix_chain_finishes_the_chain() {
     // DD FD 21 34 12: LD IY,0x1234, after a chain.
     let mut bus = TestingBus::new(0x10000);
+    bus.record_events();
     bus.load_to_memory(&[0xDD, 0xFD, 0x21, 0x34, 0x12], 0x8000);
     let mut cpu = Z80::default();
     cpu.regs.set_pc(0x8000);
@@ -60,6 +62,7 @@ fn clone_mid_prefix_chain_finishes_the_chain() {
     assert_eq!(copy.regs.get_pc(), 0x8005);
     assert_eq!(snapshot(&copy), snapshot(&cpu));
     assert_eq!(copy_bus.clocks(), bus.clocks());
+    assert_eq!(copy_bus.take_waits(), bus.take_waits());
 }
 
 #[test]
@@ -81,6 +84,7 @@ fn regs_clone_is_independent_of_original() {
 #[test]
 fn clone_takes_interrupt_as_original() {
     let mut bus = TestingBus::new(0x10000);
+    bus.record_events();
     bus.load_to_memory(&[0x76], 0x8000); // HALT
     bus.load_to_memory(&[0x0C], 0x0038); // INC C
     let mut cpu = Z80::default();
@@ -101,4 +105,5 @@ fn clone_takes_interrupt_as_original() {
     assert_eq!(snapshot(&copy), snapshot(&cpu));
     assert_eq!(copy_bus.memory(), bus.memory());
     assert_eq!(copy_bus.clocks(), bus.clocks());
+    assert_eq!(copy_bus.take_waits(), bus.take_waits());
 }

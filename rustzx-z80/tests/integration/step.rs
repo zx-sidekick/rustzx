@@ -78,7 +78,14 @@ const KINDS: [(u8, Line, u16, usize); 4] = [
 /// Takes the interrupt with `step` on one copy of the machine and with `emulate` on another,
 /// and checks that `step` stopped at the handler with nothing of it run, and that the
 /// instruction `step` runs next brings both copies to the same place.
-fn check_interrupt_step(cpu: Z80, bus: TestingBus, line: Line, handler: u16, int_clocks: usize) {
+fn check_interrupt_step(
+    cpu: Z80,
+    mut bus: TestingBus,
+    line: Line,
+    handler: u16,
+    int_clocks: usize,
+) {
+    bus.take_waits();
     let (mut by_step, mut step_bus) = (cpu.clone(), bus.clone());
     let (mut by_emulate, mut emulate_bus) = (cpu, bus);
     let before = snapshot(&by_step);
@@ -124,6 +131,7 @@ fn check_interrupt_step(cpu: Z80, bus: TestingBus, line: Line, handler: u16, int
     );
     let mut step_events = step_bus.take_events();
     assert_eq!(step_events.last(), Some(&Event::Pc(handler)));
+    let mut step_waits = step_bus.take_waits();
 
     assert_eq!(by_step.step(&mut step_bus), Step::Instruction);
     by_emulate.emulate(&mut emulate_bus);
@@ -132,6 +140,8 @@ fn check_interrupt_step(cpu: Z80, bus: TestingBus, line: Line, handler: u16, int
     assert_eq!(snapshot(&by_step), snapshot(&by_emulate));
     assert_eq!(step_bus.clocks(), emulate_bus.clocks());
     assert_eq!(step_bus.memory(), emulate_bus.memory());
+    step_waits.extend(step_bus.take_waits());
+    assert_eq!(step_waits, emulate_bus.take_waits());
     step_events.extend(step_bus.take_events());
     step_events.retain(|e| *e != Event::Pc(handler));
     let mut emulate_events = emulate_bus.take_events();
@@ -201,7 +211,7 @@ fn check_deferred(program: &[u8], deferred_steps: usize, line: Line) {
         assert_eq!(cpu.step(&mut bus), Step::Instruction);
         other.emulate(&mut other_bus);
         assert_eq!(snapshot(&cpu), snapshot(&other));
-        assert_eq!(bus.clocks(), other_bus.clocks());
+        assert_eq!(bus.take_waits(), other_bus.take_waits());
     }
     let pc = cpu.regs.get_pc();
     assert_eq!(cpu.step(&mut bus), Step::Interrupt);
@@ -304,6 +314,7 @@ fn step_without_interrupt_is_emulate() {
         assert_eq!(snapshot(&by_step), snapshot(&by_emulate));
         assert_eq!(step_bus.clocks(), emulate_bus.clocks());
         assert_eq!(step_bus.take_events(), emulate_bus.take_events());
+        assert_eq!(step_bus.take_waits(), emulate_bus.take_waits());
     }
     assert_eq!(step_bus.memory(), emulate_bus.memory());
     assert!(by_step.is_halted());
@@ -437,6 +448,11 @@ fn check_same_run(im: u8, program: &[u8], handler: &[u8], schedule: Schedule, cl
             "call {calls}"
         );
         assert_eq!(step_events, by_emulate.bus.take_events(), "call {calls}");
+        assert_eq!(
+            by_step.bus.take_waits(),
+            by_emulate.bus.take_waits(),
+            "call {calls}"
+        );
         assert_eq!(by_step.nmi_pending, by_emulate.nmi_pending, "call {calls}");
     }
     assert!(

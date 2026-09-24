@@ -15,6 +15,15 @@ pub enum Event {
     Reti,
 }
 
+/// A wait the processor asked the bus for. Where the address is given, it is what a contended
+/// machine would delay on, so it matters as much as the clocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wait {
+    Mreq(u16, usize),
+    NoMreq(u16, usize),
+    Internal(usize),
+}
+
 #[derive(Clone)]
 pub struct TestingBus {
     memory: Vec<u8>,
@@ -25,6 +34,7 @@ pub struct TestingBus {
     interrupt_data: u8,
     clocks: usize,
     events: Option<Vec<Event>>,
+    waits: Option<Vec<Wait>>,
 }
 
 impl TestingBus {
@@ -38,6 +48,7 @@ impl TestingBus {
             interrupt_data: 0,
             clocks: 0,
             events: None,
+            waits: None,
         }
     }
 
@@ -83,9 +94,25 @@ impl TestingBus {
         self.clocks
     }
 
-    /// Starts recording events. Off by default, so long runs such as zexall don't pile them up.
+    /// Starts recording events and waits. Off by default, so long runs such as zexall don't pile
+    /// them up.
     pub fn record_events(&mut self) {
         self.events.get_or_insert_with(Vec::new);
+        self.waits.get_or_insert_with(Vec::new);
+    }
+
+    /// The waits recorded since the last call, oldest first.
+    pub fn take_waits(&mut self) -> Vec<Wait> {
+        self.waits.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    fn wait(&mut self, wait: Wait) {
+        self.clocks += match wait {
+            Wait::Mreq(_, clk) | Wait::NoMreq(_, clk) | Wait::Internal(clk) => clk,
+        };
+        if let Some(waits) = &mut self.waits {
+            waits.push(wait);
+        }
     }
 
     /// The events recorded since the last call, oldest first.
@@ -181,16 +208,16 @@ impl Z80Bus for TestingBus {
 
     fn write_io(&mut self, _port: u16, _data: u8) {}
 
-    fn wait_mreq(&mut self, _addr: u16, clk: usize) {
-        self.clocks += clk;
+    fn wait_mreq(&mut self, addr: u16, clk: usize) {
+        self.wait(Wait::Mreq(addr, clk));
     }
 
-    fn wait_no_mreq(&mut self, _addr: u16, clk: usize) {
-        self.clocks += clk;
+    fn wait_no_mreq(&mut self, addr: u16, clk: usize) {
+        self.wait(Wait::NoMreq(addr, clk));
     }
 
     fn wait_internal(&mut self, clk: usize) {
-        self.clocks += clk;
+        self.wait(Wait::Internal(clk));
     }
 
     fn read_interrupt(&mut self) -> u8 {

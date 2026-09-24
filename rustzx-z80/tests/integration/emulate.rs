@@ -3,7 +3,7 @@
 //! Uses only what upstream `master` has (no `step`, no `Clone`), so this file can be run against
 //! upstream to show that these are its values, and that `emulate` has not changed here.
 
-use crate::{snapshot, Event, TestingBus};
+use crate::{snapshot, Event, TestingBus, Wait};
 use rustzx_z80::Z80;
 
 const DI: u8 = 0xF3;
@@ -363,6 +363,129 @@ fn reti_tells_bus() {
     assert_eq!(bus.take_events(), [Event::Reti, Event::Pc(0x1234)]);
 }
 
+/// The five internal clocks of an NMI, each on the address bus as `addr`.
+fn nmi_internal(addr: u16) -> [Wait; 5] {
+    [Wait::NoMreq(addr, 1); 5]
+}
+
+#[test]
+fn im1_interrupt_waits() {
+    let (mut cpu, mut bus) = machine(1, &[NOP]);
+    bus.set_interrupt(true);
+
+    cpu.emulate(&mut bus);
+
+    assert_eq!(
+        bus.take_waits(),
+        [
+            Wait::Mreq(STACK - 1, 3),
+            Wait::Mreq(STACK - 2, 3),
+            Wait::Internal(7),
+            Wait::Mreq(IM1_HANDLER, 4),
+        ]
+    );
+}
+
+#[test]
+fn im2_interrupt_waits() {
+    let (mut cpu, mut bus) = machine(2, &[NOP]);
+    cpu.regs.set_i(0x90);
+    bus.set_interrupt_data(0x20);
+    bus.load_to_memory(&[0x00, 0xA0], 0x9020);
+    bus.set_interrupt(true);
+
+    cpu.emulate(&mut bus);
+
+    assert_eq!(
+        bus.take_waits(),
+        [
+            Wait::Mreq(STACK - 1, 3),
+            Wait::Mreq(STACK - 2, 3),
+            Wait::Mreq(0x9020, 3),
+            Wait::Mreq(0x9021, 3),
+            Wait::Internal(7),
+            Wait::Mreq(0xA000, 4),
+        ]
+    );
+}
+
+#[test]
+fn nmi_waits() {
+    let (mut cpu, mut bus) = machine(1, &[NOP]);
+    bus.set_nmi(true);
+
+    cpu.emulate(&mut bus);
+
+    let mut expected = nmi_internal(PROGRAM).to_vec();
+    expected.extend([
+        Wait::Mreq(STACK - 1, 3),
+        Wait::Mreq(STACK - 2, 3),
+        Wait::Mreq(NMI_HANDLER, 4),
+    ]);
+    assert_eq!(bus.take_waits(), expected);
+}
+
+/// Leaving a HALT moves the program counter past it before the NMI's internal clocks, so they
+/// are on the address after the HALT.
+#[test]
+fn nmi_from_halt_waits() {
+    let (mut cpu, mut bus) = machine(1, &[HALT]);
+    cpu.emulate(&mut bus);
+    assert_eq!(bus.take_waits(), [Wait::Mreq(PROGRAM, 4)]);
+    bus.set_nmi(true);
+
+    cpu.emulate(&mut bus);
+
+    let mut expected = nmi_internal(PROGRAM + 1).to_vec();
+    expected.extend([
+        Wait::Mreq(STACK - 1, 3),
+        Wait::Mreq(STACK - 2, 3),
+        Wait::Mreq(NMI_HANDLER, 4),
+    ]);
+    assert_eq!(bus.take_waits(), expected);
+}
+
+#[test]
+fn int_from_halt_waits() {
+    let (mut cpu, mut bus) = machine(1, &[HALT]);
+    cpu.emulate(&mut bus);
+    cpu.emulate(&mut bus);
+    assert_eq!(bus.take_waits(), [Wait::Mreq(PROGRAM, 4); 2]);
+    bus.set_interrupt(true);
+
+    cpu.emulate(&mut bus);
+
+    assert_eq!(
+        bus.take_waits(),
+        [
+            Wait::Mreq(STACK - 1, 3),
+            Wait::Mreq(STACK - 2, 3),
+            Wait::Internal(7),
+            Wait::Mreq(IM1_HANDLER, 4),
+        ]
+    );
+}
+
+#[test]
+fn prefix_chain_waits() {
+    let (mut cpu, mut bus) = machine(1, &[PREFIX_DD, PREFIX_FD, LD_HL_NN, 0x34, 0x12]);
+
+    cpu.emulate(&mut bus);
+    assert_eq!(
+        bus.take_waits(),
+        [Wait::Mreq(PROGRAM, 4), Wait::Mreq(PROGRAM + 1, 4)]
+    );
+    cpu.emulate(&mut bus);
+    assert_eq!(
+        bus.take_waits(),
+        [
+            Wait::Mreq(PROGRAM + 2, 4),
+            Wait::Mreq(PROGRAM + 3, 3),
+            Wait::Mreq(PROGRAM + 4, 3),
+        ]
+    );
+}
+
 /// A program that counts in B and halts, interrupted in IM 2 every 1000 clocks by a handler that
 /// counts in C, and once by an NMI whose handler counts in E. Pins the end state after 100_000
 /// clocks, so any change to how `emulate` runs, times or interrupts a program shows here.
@@ -389,6 +512,7 @@ fn long_run_end_state() {
     bus.set_nmi(false);
 
     let events = bus.take_events();
+    let waits = bus.take_waits();
     let s = snapshot(&cpu);
     let stack: Vec<u8> = (STACK - 4..STACK).map(|a| bus.read_memory(a)).collect();
 
@@ -404,6 +528,8 @@ fn long_run_end_state() {
     assert_eq!((s.iff1, s.iff2, s.halted), LONG_RUN_IFF1_IFF2_HALTED);
     assert_eq!(stack, LONG_RUN_STACK);
     assert_eq!(events.len(), LONG_RUN_EVENTS);
+    assert_eq!(waits.len(), LONG_RUN_WAITS);
+    assert_eq!(wait_digest(&waits), LONG_RUN_WAIT_DIGEST);
     assert_eq!(
         events.iter().filter(|e| **e == Event::Halt(true)).count(),
         LONG_RUN_HALTS
@@ -419,4 +545,23 @@ const LONG_RUN_MEM_PTR: u16 = PROGRAM;
 const LONG_RUN_IFF1_IFF2_HALTED: (bool, bool, bool) = (true, true, true);
 const LONG_RUN_STACK: [u8; 4] = [0x00, 0x00, 0x03, 0x80];
 const LONG_RUN_EVENTS: usize = 47_842;
+const LONG_RUN_WAITS: usize = 25_476;
+const LONG_RUN_WAIT_DIGEST: u64 = 0x1a6e_b03e_5e60_75d3;
+
+/// FNV-1a over every wait's kind, address and clocks, so one number stands for the whole
+/// sequence.
+fn wait_digest(waits: &[Wait]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for wait in waits {
+        let (kind, addr, clk) = match *wait {
+            Wait::Mreq(addr, clk) => (0u8, addr, clk),
+            Wait::NoMreq(addr, clk) => (1, addr, clk),
+            Wait::Internal(clk) => (2, 0, clk),
+        };
+        for byte in [kind, (addr >> 8) as u8, addr as u8, clk as u8] {
+            hash = (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    hash
+}
 const LONG_RUN_HALTS: usize = 23_571;
