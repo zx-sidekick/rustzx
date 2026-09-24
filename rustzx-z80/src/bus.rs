@@ -61,7 +61,9 @@ pub trait Z80Bus {
     fn halt(&mut self, halted: bool);
     /// Checks int signal
     fn int_active(&self) -> bool;
-    /// Checks nmi signal
+    /// Checks the NMI line. The processor looks at it once before each step and takes an NMI
+    /// when it goes active (it is edge-triggered): holding it active takes one NMI, not one per
+    /// instruction.
     fn nmi_active(&self) -> bool;
     /// invokes breakpoints check on bus device
     fn pc_callback(&mut self, addr: u16);

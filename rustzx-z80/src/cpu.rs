@@ -77,6 +77,14 @@ impl NmiLatch {
 }
 
 /// Z80 Processor struct
+///
+/// Besides the public fields, it keeps some state that only exists between two steps and that
+/// no snapshot format records: a prefix still to be applied in a chain of `DD`/`FD` prefixes,
+/// the NMI latch (the line's last level, a pending NMI, and whether one was just taken), and
+/// whether the last instruction was `LD A,I` or `LD A,R`. `Clone` copies all of it. A processor
+/// rebuilt from the public fields, starting from [`Z80::default`], starts with all of it clear,
+/// which can differ from the original: for example, an NMI line held active across the rebuild
+/// looks like a new edge to the rebuilt processor.
 #[derive(Clone)]
 pub struct Z80 {
     /// Contains Z80 registers data
@@ -89,7 +97,9 @@ pub struct Z80 {
     /// `RETI` or `RETN` when it changes IFF1 (which only happens after an NMI), or a `DD`/`FD`
     /// prefix followed by another prefix. The next step runs an instruction without taking a
     /// maskable interrupt, and clears it. It does not hold off an NMI; only an unfinished chain
-    /// of prefixes does.
+    /// of prefixes does. (After `DI`, and inside a chain of prefixes, it changes nothing more,
+    /// since IFF1 is already clear or the chain holds interrupts off itself; it is set there as
+    /// upstream sets it.)
     pub skip_interrupt: bool,
     /// type of interrupt
     pub(crate) int_mode: IntMode,
@@ -191,6 +201,7 @@ impl Z80 {
             // 3 x 2 clocks consumed
             execute_push_16(self, bus, RegName16::PC, 3);
             self.regs.set_pc(0x0066);
+            self.iff2_read = false;
 
             // mem_ptr is set to PC
             self.regs.set_mem_ptr(self.regs.get_pc());
@@ -203,6 +214,7 @@ impl Z80 {
             // is still copying it into P/V, so P/V reads 0
             if self.iff2_read {
                 self.regs.set_flags(self.regs.get_flags() & !FLAG_PV);
+                self.iff2_read = false;
             }
             // q resets during interrupt
             self.regs.clear_q();

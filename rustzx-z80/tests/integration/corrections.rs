@@ -527,3 +527,43 @@ fn last_block_io_iteration_keeps_bc_mem_ptr() {
     assert_eq!(block_io(0xB3, 1), (0x0011, PROGRAM + 2));
     assert_eq!(block_io(0xBB, 1), (0x000F, PROGRAM + 2));
 }
+
+// --- More NMI cases ---
+
+/// An NMI straight after a RETN that holds off the maskable interrupt is not held off itself.
+#[test]
+fn nmi_is_not_held_off_by_retn() {
+    let (mut cpu, mut bus) = machine(&[NOP; 4]);
+    bus.load_to_memory(&[PREFIX_ED, RETN], NMI_HANDLER);
+
+    bus.set_nmi(true);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    bus.set_nmi(false);
+    // RETN: IFF1 goes from 0 back to 1, which holds off INT for one instruction
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    assert!(cpu.skip_interrupt);
+
+    bus.set_nmi(true);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    assert_eq!(cpu.regs.get_pc(), NMI_HANDLER);
+    assert_eq!(return_address(&cpu, &mut bus), PROGRAM);
+}
+
+/// An NMI line held active while the processor is halted takes it out of the HALT once, not
+/// again on every step.
+#[test]
+fn held_nmi_leaves_halt_once() {
+    let (mut cpu, mut bus) = machine(&[HALT]);
+    bus.load_to_memory(&[NOP; 8], NMI_HANDLER);
+    assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    assert!(cpu.is_halted());
+
+    bus.set_nmi(true);
+    assert_eq!(cpu.step(&mut bus), Step::Interrupt);
+    assert!(!cpu.is_halted());
+    assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 1);
+    for _ in 0..4 {
+        assert_eq!(cpu.step(&mut bus), Step::Instruction);
+    }
+    assert_eq!(cpu.regs.get_sp(), STACK - 2);
+}
