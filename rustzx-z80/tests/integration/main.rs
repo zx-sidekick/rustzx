@@ -1,6 +1,7 @@
 mod alu;
 mod corrections;
 mod emulate;
+mod fuse_flag_cases;
 mod interrupt;
 mod state;
 mod step;
