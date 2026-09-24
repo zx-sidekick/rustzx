@@ -1,24 +1,24 @@
 use crate::{
     opcode::BlockDir,
     tables::{lookup8_r12, HALF_CARRY_SUB_TABLE, PARITY_TABLE, SZF3F5_TABLE},
-    RegName16, RegName8, Z80Bus, FLAG_CARRY, FLAG_F3, FLAG_F5, FLAG_HALF_CARRY, FLAG_PV, FLAG_SIGN,
-    FLAG_SUB, FLAG_ZERO, Z80,
+    Z80Bus, FLAG_CARRY, FLAG_F3, FLAG_F5, FLAG_HALF_CARRY, FLAG_PV, FLAG_SIGN, FLAG_SUB, FLAG_ZERO,
+    Z80,
 };
 
 /// ldi/ldd instruction group
 pub fn execute_ldi_ldd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) {
     let src = bus.read(cpu.regs.get_hl(), 3);
-    let bc = cpu.regs.dec_reg_16(RegName16::BC);
+    let bc = cpu.regs.dec_bc();
     bus.write(cpu.regs.get_de(), src, 3);
     bus.wait_loop(cpu.regs.get_de(), 2);
     match dir {
         BlockDir::Inc => {
-            cpu.regs.inc_reg_16(RegName16::HL);
-            cpu.regs.inc_reg_16(RegName16::DE);
+            cpu.regs.inc_hl();
+            cpu.regs.inc_de();
         }
         BlockDir::Dec => {
-            cpu.regs.dec_reg_16(RegName16::HL);
-            cpu.regs.dec_reg_16(RegName16::DE);
+            cpu.regs.dec_hl();
+            cpu.regs.dec_de();
         }
     }
     let mut flags = cpu.regs.get_flags();
@@ -37,15 +37,15 @@ pub fn execute_cpi_cpd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> b
     bus.wait_loop(cpu.regs.get_hl(), 5);
     match dir {
         BlockDir::Inc => {
-            cpu.regs.inc_reg_16(RegName16::HL);
+            cpu.regs.inc_hl();
             cpu.regs.set_mem_ptr(cpu.regs.get_mem_ptr().wrapping_add(1));
         }
         BlockDir::Dec => {
-            cpu.regs.dec_reg_16(RegName16::HL);
+            cpu.regs.dec_hl();
             cpu.regs.set_mem_ptr(cpu.regs.get_mem_ptr().wrapping_sub(1));
         }
     }
-    let bc = cpu.regs.dec_reg_16(RegName16::BC);
+    let bc = cpu.regs.dec_bc();
     let acc = cpu.regs.get_acc();
     let tmp = acc.wrapping_sub(src);
     let mut flags = cpu.regs.get_flags() & FLAG_CARRY;
@@ -77,21 +77,21 @@ pub fn execute_ini_ind(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> u
     bus.write(cpu.regs.get_hl(), src, 3);
     match dir {
         BlockDir::Inc => {
-            cpu.regs.inc_reg_16(RegName16::HL);
+            cpu.regs.inc_hl();
             cpu.regs.set_mem_ptr(cpu.regs.get_bc().wrapping_add(1));
         }
         BlockDir::Dec => {
-            cpu.regs.dec_reg_16(RegName16::HL);
+            cpu.regs.dec_hl();
             cpu.regs.set_mem_ptr(cpu.regs.get_bc().wrapping_sub(1));
         }
     }
-    let b = cpu.regs.dec_reg_8(RegName8::B);
+    let b = cpu.regs.dec_b();
     let mut flags = 0u8;
     flags |= SZF3F5_TABLE[b as usize];
     flags |= u8::from((src & 0x80) != 0) * FLAG_SUB;
     let c = match dir {
-        BlockDir::Inc => cpu.regs.get_reg_8(RegName8::C).wrapping_add(1),
-        BlockDir::Dec => cpu.regs.get_reg_8(RegName8::C).wrapping_sub(1),
+        BlockDir::Inc => cpu.regs.get_c().wrapping_add(1),
+        BlockDir::Dec => cpu.regs.get_c().wrapping_sub(1),
     };
     // (HL) + ( C (+ or -) 1) & 0xFF
     let (k, k_carry) = c.overflowing_add(src);
@@ -108,15 +108,15 @@ pub fn execute_ini_ind(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> u
 pub fn execute_outi_outd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> u8 {
     bus.wait_no_mreq(cpu.regs.get_ir(), 1);
     let src = bus.read(cpu.regs.get_hl(), 3);
-    let b = cpu.regs.dec_reg_8(RegName8::B);
+    let b = cpu.regs.dec_b();
 
     match dir {
         BlockDir::Inc => {
-            cpu.regs.inc_reg_16(RegName16::HL);
+            cpu.regs.inc_hl();
             cpu.regs.set_mem_ptr(cpu.regs.get_bc().wrapping_add(1));
         }
         BlockDir::Dec => {
-            cpu.regs.dec_reg_16(RegName16::HL);
+            cpu.regs.dec_hl();
             cpu.regs.set_mem_ptr(cpu.regs.get_bc().wrapping_sub(1));
         }
     }

@@ -93,6 +93,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 **Problem.** ZX Sidekick answers the ROM's multiply (`HL = HL * DE`) itself, and has to leave F exactly as the ROM's `ADD HL,HL` and `ADD HL,DE` would. It kept a hand-written copy of `ADD HL,ss`'s flag rules, which only a test on its side kept in step with this crate's.
 
 **Change.** A public `alu` module with `add16_flags(flags, a, b) -> (sum, flags)`, the arithmetic of `ADD HL,ss`, `ADD IX,ss` and `ADD IY,ss`. The instruction calls it, so the two cannot drift apart. MEMPTR, which the instruction also sets, is left to the caller. Tested in `tests/integration/alu.rs`: values worked out by hand from the flag rules, and agreement with the instruction for every prefix, source register and starting F.
+### 7. Faster register access in the block instructions
+
+**Problem.** The block instructions (`LDI`/`LDIR`, `CPI`/`CPIR`, `INI`/`INIR`, `OUTI`/`OTIR` and their decrementing forms) and `DJNZ` name fixed registers, but reached them through `RegName16`/`RegName8`, decoding the name on every byte moved. A profile of ZX Sidekick's Manic Miner, which copies about 8.5 KB a pass with `LDIR`, had those accessors at about 7% of a frame.
+
+**Change.** Direct crate-internal accessors for HL, DE, BC and B, used where those registers are named, and `#[inline]` on the generic accessors. No behaviour change: the tests, zexall, z80test and SingleStepTests give the same results. `examples/speed.rs` measures it; with code alignment held fixed, a block copy runs about 2× as fast and a mix of other instructions about 2% faster.
+
 ### 10. `Z80::push`, `pop` and `ret`: stack operations for callers
 
 **Problem.** ZX Sidekick answers ROM routines itself and steers games between instructions, which means pushing, popping and returning from outside the processor. It kept its own copies of those stack operations.
