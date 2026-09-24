@@ -7,7 +7,7 @@ ZX Sidekick runs original ZX Spectrum games, from the player's own copy, in an e
 - `master` follows upstream unchanged.
 - `zx-sidekick` is `master` plus the patches below. It is the default branch here so this page is what you see first.
 
-## Why a fork
+## Why carry patches
 
 `rustzx-z80` 0.16.0 is a good processor: it passes zexall and the z80test suites, and inside ZX Sidekick's bus it matches the Fuse test corpus's bus activity in all 1,335 cases. But ZX Sidekick needed three workarounds to use it, each because the crate kept something to itself:
 
@@ -15,7 +15,7 @@ ZX Sidekick runs original ZX Spectrum games, from the player's own copy, in an e
 2. An interrupt could not be seen before its handler had started to run.
 3. The halted and just-after-`EI` state could not be read or restored.
 
-Each fix is small, keeps the existing API and behaviour, and is written so it can be offered upstream. Patches 4 and 5 came later, from a review of the whole crate: 4 keeps behaviour, and 5 changes it on purpose, where the crate did not do what the Z80 does. Upstream is quiet: the last release is 0.16.0 (31 March 2023), the last change to `rustzx-z80` on `master` was in July 2024, and pull requests have been open since 2023. So the patches are carried here rather than waited for.
+Each fix is small, keeps the existing API and behaviour, and is written so it can be offered upstream. Patches 4 and 5 came later, from a review of the whole crate: 4 keeps behaviour, and 5 changes it on purpose, where the crate did not do what the Z80 does. The patches after them add what ZX Sidekick needed next. Upstream is quiet: the last release is 0.16.0 (31 March 2023), the last change to `rustzx-z80` on `master` was in July 2024, and pull requests have been open since 2023. So the patches are carried here rather than waited for.
 
 ## The patches
 
@@ -81,7 +81,7 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 - `RETI` and `RETN` copy IFF2 into IFF1 during the next opcode fetch, so when that changes IFF1 (only after an NMI) a maskable interrupt is not taken straight after them (found by Andre Weissflog in 2021).
 - After `LD A,I` or `LD A,R`, a maskable interrupt accepted straight away leaves P/V at 0, as on an NMOS Z80 (Zilog, *Z80 Family Data Book*, 1989).
 - A `DD` or `FD` prefix that doesn't apply to the next opcode is an instruction of its own that leaves the flags alone, so it clears Q: a prefixed `SCF` or `CCF` takes flags 3 and 5 from `F | A`, not `(Q ^ F) | A` (as in redcode/Z80 and SingleStepTests).
-- A repeating `INIR`, `INDR`, `OTIR` or `OTDR` sets MEMPTR to the instruction's address + 1, as `LDIR` does (found by rofl0r in 2022 and Manuel Sainz de Baranda y Goñi in 2023). z80test 1.2a corrected its `INIR->NOP'`/`INDR->NOP'` MEMPTR checksums for this; `rustzx-test` now bundles 1.2a's `z80memptr`, which the fork passes and upstream fails.
+- A repeating `INIR`, `INDR`, `OTIR` or `OTDR` sets MEMPTR to the instruction's address + 1, as `LDIR` does (found by rofl0r in 2022 and Manuel Sainz de Baranda y Goñi in 2023). z80test 1.2a corrected its `INIR->NOP'`/`INDR->NOP'` MEMPTR checksums for this; `rustzx-test` now bundles 1.2a's `z80memptr`, which ZX Sidekick's `rustzx-z80` passes and upstream's fails.
 - `CodegenMemorySpace::write_word` wrote both bytes to the same address; `CodeGenerator` panicked in a debug build when it wrote past `0xFFFF`; and code it writes into a bus is stored with `write_internal`, so it no longer waits (or is contended) as if the processor had written it.
 
 `emulate.rs` still passes unchanged on upstream `master`: none of these is on a path it pins. Its long run's NMI handler re-enables interrupts with `EI` before `RETN`, so that `RETN` leaves IFF1 alone and the run stays on behaviour both share.
@@ -119,7 +119,7 @@ cargo test --release -p rustzx-test --test z80test -- --include-ignored
 
 On the `zx-sidekick` branch, on 24 September 2026: all of `rustzx-z80`'s tests pass, including all of zexall and the tests of the patches' behaviour, and the three z80test suites pass (`z80memptr` from 1.2a). `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does outside the corrections in patch 5. Against other emulators' test data (24 September 2026, harnesses not in this repository):
 
-- Fuse's own core tests (`z80/tests`, 1,356 cases, registers, memory, T-states and every timed memory access): 1,346 match exactly, up from 1,345 on upstream (the fork fixes the two MEMPTR cases Fuse checks, `32` and `d3_4`). Of the other 10, 5 are Fuse's log leaving out the displacement read of a `JR cc`/`DJNZ` that doesn't jump (the Z80 does read it), and 5 are repeating block instructions, whose flags and MEMPTR Fuse doesn't emulate as later research found them.
+- Fuse's own core tests (`z80/tests`, 1,356 cases, registers, memory, T-states and every timed memory access): 1,346 match exactly, up from 1,345 on upstream (these patches fix the two MEMPTR cases Fuse checks, `32` and `d3_4`). Of the other 10, 5 are Fuse's log leaving out the displacement read of a `JR cc`/`DJNZ` that doesn't jump (the Z80 does read it), and 5 are repeating block instructions, whose flags and MEMPTR Fuse doesn't emulate as later research found them.
 - SingleStepTests/z80 (1,604,000 cases, generated from the Ares core): 1,594,038 match. The rest are `HALT`, where they have PC move past it while this crate keeps it on the `HALT` (as Fuse and floooh's chips do; the address an interrupt pushes is the same), and their `ei` field, which means "last instruction was `EI`" where `skip_interrupt` is also set by `DI` and by the `RETN` hold-off.
 
 Before those corrections, ZX Sidekick's Fuse corpus harness gave the same result on this crate as on 0.16.0 (it has not been run since): 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335. Those 6 are not differences with Fuse today: the harness runs an older copy of Fuse's tests (1,335 cases, with no MEMPTR column), from before Fuse modelled Q and MEMPTR there, and the current tests (1,356 cases) expect what this crate does. `tests/integration/fuse_flag_cases.rs` pins the 6 cases with the current tests' values; updating ZX Sidekick's copy of the tests should make its harness match on them too.
@@ -132,7 +132,7 @@ git switch zx-sidekick
 git rebase upstream/master
 ```
 
-A patch upstream has taken is dropped in the rebase. If upstream releases all three, ZX Sidekick goes back to the published crate and this fork has no reason to exist.
+A patch upstream has taken is dropped in the rebase. If upstream releases every patch here, ZX Sidekick goes back to the published crate and this repository has no reason to exist.
 
 ## Licence
 
