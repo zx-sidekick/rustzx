@@ -37,7 +37,9 @@ pub enum Step {
 }
 
 /// A set of addresses to stop at, for [`Z80::run_until`]: one bit for each of the 65,536.
-#[derive(Clone)]
+///
+/// It is 8 KB; keep one in a long-lived struct, or box it, rather than building one per call.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Breakpoints {
     bits: [u64; 1024],
 }
@@ -78,6 +80,15 @@ impl Breakpoints {
     }
 }
 
+impl core::fmt::Debug for Breakpoints {
+    /// The addresses in the set, rather than 1,024 words of bits.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_set()
+            .entries((0..=0xFFFF_u16).filter(|&addr| self.contains(addr)))
+            .finish()
+    }
+}
+
 impl FromIterator<u16> for Breakpoints {
     fn from_iter<I: IntoIterator<Item = u16>>(addrs: I) -> Self {
         let mut set = Self::new();
@@ -97,6 +108,8 @@ pub enum Stop {
     /// the next instruction to run.
     Breakpoint(u16),
     /// An interrupt was taken: the program counter is at its handler, none of which has run.
+    /// This is reported instead of a breakpoint on the handler's address, so a caller that
+    /// wants one there should look at the program counter.
     Interrupt,
 }
 
@@ -412,15 +425,17 @@ impl Z80 {
     /// Runs [`Z80::step`] until `limit` says so, an instruction leaves the program counter on a
     /// breakpoint, or an interrupt is taken; says which.
     ///
-    /// It is the loop a caller would write around `step`, run inside the crate so it compiles to
-    /// one tight loop:
+    /// It is the loop a caller would write around `step`, written once here (it runs no faster
+    /// than a caller's own, since `step` is compiled into the caller's crate either way):
     ///
     /// ```text
     /// loop {
     ///     if limit(bus) { return Stop::Limit }
     ///     match step(bus) {
     ///         Step::Interrupt => return Stop::Interrupt,
-    ///         Step::Instruction if breakpoints.contains(pc) => return Stop::Breakpoint(pc),
+    ///         Step::Instruction if !mid_prefix_chain && breakpoints.contains(pc) => {
+    ///             return Stop::Breakpoint(pc)
+    ///         }
     ///         Step::Instruction => {}
     ///     }
     /// }
@@ -429,8 +444,12 @@ impl Z80 {
     /// `limit` is asked before each step; it usually compares the bus's clock with an end time,
     /// since only the bus knows how many T-states have passed (`|bus| bus.clocks() >= end`).
     /// Breakpoints are checked after each instruction, not before the first, so calling
-    /// `run_until` again after it stopped at one carries on from there. [`Z80Bus::pc_callback`]
-    /// is still called after every step.
+    /// `run_until` again after it stopped at one carries on from there. They are not checked in
+    /// the middle of a chain of `DD`/`FD` prefixes, where the program counter is inside an
+    /// instruction that hasn't run yet. A breakpoint on a `HALT` stops the run on every step
+    /// while halted (every 4 T-states), since the program counter stays on it.
+    /// [`Z80Bus::pc_callback`] is still called after every step.
+    #[must_use]
     pub fn run_until<B: Z80Bus>(
         &mut self,
         bus: &mut B,
@@ -445,7 +464,7 @@ impl Z80 {
                 return Stop::Interrupt;
             }
             let pc = self.regs.get_pc();
-            if breakpoints.contains(pc) {
+            if self.active_prefix == Prefix::None && breakpoints.contains(pc) {
                 return Stop::Breakpoint(pc);
             }
         }

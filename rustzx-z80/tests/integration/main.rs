@@ -90,7 +90,12 @@ impl TestingBus {
 
     /// Makes the maskable interrupt line active for `length` T-states out of every `period`,
     /// following the bus's clock, as a machine's frame interrupt does.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is 0.
     pub fn set_interrupt_period(&mut self, period: usize, length: usize) {
+        assert!(period > 0, "an interrupt period of 0 T-states");
         self.interrupt_period = Some((period, length));
     }
 

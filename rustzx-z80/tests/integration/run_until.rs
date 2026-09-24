@@ -2,6 +2,7 @@
 
 use crate::{snapshot, State, TestingBus};
 use rustzx_z80::{Breakpoints, Step, Stop, Z80};
+use std::collections::HashSet;
 
 const NOP: u8 = 0x00;
 const HALT: u8 = 0x76;
@@ -99,14 +100,21 @@ fn stops_when_an_interrupt_is_taken() {
     assert_eq!(cpu.regs.get_c(), 0, "none of the handler has run");
 }
 
-/// What a caller gets back from one stop: why, the processor, the clock and memory.
+/// What a caller gets back from one stop: why, the processor, the clock and the stack (the only
+/// memory these programs write; the whole of memory is compared once at the end).
 type Outcome = (Stop, State, usize, Vec<u8>);
 
-/// The reference: the loop `run_until` stands for, written out with `step`.
+fn stack(bus: &TestingBus) -> Vec<u8> {
+    bus.memory()[0xBFF0..0xC000].to_vec()
+}
+
+/// The reference: the loop `run_until` stands for, written out with `step`, with its own set of
+/// addresses so a fault in `Breakpoints` can't hide in both. (The programs here have no prefix
+/// chains, which it couldn't see; `no_breakpoint_inside_a_prefix_chain` covers those.)
 fn by_step_loop(
     cpu: &mut Z80,
     bus: &mut TestingBus,
-    breakpoints: &Breakpoints,
+    breakpoints: &HashSet<u16>,
     end: usize,
 ) -> Stop {
     loop {
@@ -117,7 +125,7 @@ fn by_step_loop(
             return Stop::Interrupt;
         }
         let pc = cpu.regs.get_pc();
-        if breakpoints.contains(pc) {
+        if breakpoints.contains(&pc) {
             return Stop::Breakpoint(pc);
         }
     }
@@ -128,39 +136,48 @@ fn by_step_loop(
 /// `breakpoints`. Returns every stop, made with `run_until` or with the reference loop.
 fn stops(
     use_run_until: bool,
-    breakpoints: &Breakpoints,
+    addrs: &[u16],
     period: usize,
     frame: usize,
     total: usize,
 ) -> Vec<Outcome> {
+    let breakpoints: Breakpoints = addrs.iter().copied().collect();
+    let reference: HashSet<u16> = addrs.iter().copied().collect();
     let (mut cpu, mut bus) = machine(&[EI, INC_B, HALT, JR_E, (-5i8).cast_unsigned()]);
     bus.load_to_memory(&[INC_C, EI, RET], HANDLER);
     bus.set_interrupt_period(period, 32);
-    let mut out = vec![];
+    let mut out: Vec<Outcome> = vec![];
     let mut end = frame;
     while bus.clocks() < total {
+        let before = (bus.clocks(), cpu.regs.get_pc());
         let stop = if use_run_until {
-            cpu.run_until(&mut bus, breakpoints, |bus| bus.clocks() >= end)
+            cpu.run_until(&mut bus, &breakpoints, |bus| bus.clocks() >= end)
         } else {
-            by_step_loop(&mut cpu, &mut bus, breakpoints, end)
+            by_step_loop(&mut cpu, &mut bus, &reference, end)
         };
         if stop == Stop::Limit {
             end += frame;
+        } else {
+            // every other stop comes after at least one step, so a run can't stall in place
+            assert_ne!((bus.clocks(), cpu.regs.get_pc()), before, "no progress");
         }
-        out.push((stop, snapshot(&cpu), bus.clocks(), bus.memory().to_vec()));
+        out.push((stop, snapshot(&cpu), bus.clocks(), stack(&bus)));
+        assert!(out.len() < 100_000, "too many stops");
     }
+    out.push((
+        Stop::Limit,
+        snapshot(&cpu),
+        bus.clocks(),
+        bus.memory().to_vec(),
+    ));
     out
 }
 
 #[test]
 fn run_until_stops_where_the_step_loop_does() {
-    let sets: Vec<Breakpoints> = vec![
-        Breakpoints::new(),
-        [PROGRAM + 2].into_iter().collect(),
-        [HANDLER + 1, PROGRAM].into_iter().collect(),
-        (0..=0xFFFF).collect(),
-    ];
-    for breakpoints in &sets {
+    let every: Vec<u16> = (0..=0xFFFF).collect();
+    let sets: [&[u16]; 4] = [&[], &[PROGRAM + 2], &[HANDLER + 1, PROGRAM], &every];
+    for breakpoints in sets {
         for (period, frame) in [(1000, 700), (997, 5000), (64, 50)] {
             let by_run_until = stops(true, breakpoints, period, frame, 30_000);
             let by_step = stops(false, breakpoints, period, frame, 30_000);
@@ -172,4 +189,30 @@ fn run_until_stops_where_the_step_loop_does() {
             assert!(by_run_until.iter().any(|o| o.0 == Stop::Limit));
         }
     }
+}
+
+/// `DD FD 21 34 12` is one instruction (LD IY,0x1234 after a chain of prefixes) that `step` runs
+/// in two calls. No breakpoint fires in the middle of it; one right after it does.
+#[test]
+fn no_breakpoint_inside_a_prefix_chain() {
+    let (mut cpu, mut bus) = machine(&[0xDD, 0xFD, 0x21, 0x34, 0x12, NOP]);
+    let inside: Breakpoints = [PROGRAM + 1, PROGRAM + 2].into_iter().collect();
+
+    let stop = cpu.run_until(&mut bus, &inside, |bus| bus.clocks() >= 30);
+    assert_eq!(stop, Stop::Limit);
+    assert_eq!(cpu.regs.get_iy(), 0x1234);
+
+    let (mut cpu, mut bus) = machine(&[0xDD, 0xFD, 0x21, 0x34, 0x12, NOP]);
+    let after: Breakpoints = [PROGRAM + 2, PROGRAM + 5].into_iter().collect();
+    let stop = cpu.run_until(&mut bus, &after, |bus| bus.clocks() >= 30);
+    assert_eq!(stop, Stop::Breakpoint(PROGRAM + 5));
+    assert_eq!(cpu.regs.get_iy(), 0x1234);
+    assert_eq!(bus.clocks(), 18);
+}
+
+#[test]
+fn breakpoints_debug_lists_the_addresses() {
+    let set: Breakpoints = [0x0038, 0x8000].into_iter().collect();
+    assert_eq!(format!("{set:?}"), "{56, 32768}");
+    assert_eq!(set, [0x8000, 0x0038].into_iter().collect());
 }
