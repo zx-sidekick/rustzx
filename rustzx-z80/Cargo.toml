@@ -8,6 +8,8 @@ license.workspace = true
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
+# `cast_signed` needs 1.87, `#[expect]` 1.81; CI checks this version builds.
+rust-version = "1.87"
 
 [dev-dependencies]
 paste = "1.0"

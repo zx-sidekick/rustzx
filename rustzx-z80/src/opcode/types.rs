@@ -4,7 +4,6 @@ use crate::{
 };
 
 /// Instruction prefix type
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Prefix {
     None,
