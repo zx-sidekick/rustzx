@@ -183,10 +183,11 @@ impl Z80 {
         execute_push_16(self, bus, RegName16::PC, 0);
     }
 
-    /// Pushes `value` onto the stack, as `PUSH` does: SP goes down by 2 and `value` is stored at
-    /// the new SP, low byte first.
+    /// Pushes `value` onto the stack, as `PUSH` does: SP goes down by 2, and `value` is stored
+    /// with its low byte at SP and its high byte at SP + 1.
     ///
-    /// For a caller acting on the processor between instructions. Memory is written with
+    /// For a caller acting on the processor between instructions (not while [`Z80::step`] has
+    /// left a chain of `DD`/`FD` prefixes unfinished). Memory is written with
     /// [`Z80Bus::write_internal`], so no time passes and nothing is contended.
     pub fn push(&mut self, bus: &mut impl Z80Bus, value: u16) {
         let [low, high] = value.to_le_bytes();
@@ -196,10 +197,11 @@ impl Z80 {
         bus.write_internal(sp, low);
     }
 
-    /// Pops a value off the stack, as `POP` does: reads it at SP, low byte first, and moves SP up
-    /// by 2.
+    /// Pops a value off the stack, as `POP` does: reads its low byte at SP and its high byte at
+    /// SP + 1, and moves SP up by 2.
     ///
-    /// For a caller acting on the processor between instructions. Memory is read with
+    /// For a caller acting on the processor between instructions (not while [`Z80::step`] has
+    /// left a chain of `DD`/`FD` prefixes unfinished). Memory is read with
     /// [`Z80Bus::read_internal`], so no time passes and nothing is contended.
     pub fn pop(&mut self, bus: &mut impl Z80Bus) -> u16 {
         let low = bus.read_internal(self.regs.get_sp());
@@ -208,16 +210,24 @@ impl Z80 {
         u16::from_le_bytes([low, high])
     }
 
-    /// Returns from a subroutine as `RET` does: pops PC, and sets MEMPTR to it. Like `RET`, it
-    /// leaves the flags alone, so a following `SCF` or `CCF` sees Q = 0.
+    /// Returns from a subroutine as `RET` does: pops PC, sets MEMPTR to it, and tells the bus
+    /// through [`Z80Bus::pc_callback`]. Like any instruction that leaves the flags alone, it
+    /// makes a following `SCF` or `CCF` see Q = 0, ends the moment straight after `LD A,I` or
+    /// `LD A,R` (so a maskable interrupt taken next keeps P/V), and counts as the instruction an
+    /// NMI handler must run before a second NMI.
     ///
-    /// For a caller that answers a routine itself and then returns from it. No opcode is
-    /// fetched, so R is unchanged and no time passes; memory is read as by [`Z80::pop`].
+    /// For a caller that answers a routine itself and then returns from it, between
+    /// instructions (not while [`Z80::step`] has left a chain of `DD`/`FD` prefixes unfinished).
+    /// No opcode is fetched, so R is unchanged and no time passes; memory is read as by
+    /// [`Z80::pop`].
     pub fn ret(&mut self, bus: &mut impl Z80Bus) {
         let pc = self.pop(bus);
         self.regs.set_pc(pc);
         self.regs.set_mem_ptr(pc);
         self.regs.clear_q();
+        self.iff2_read = false;
+        self.nmi.instruction_ran();
+        bus.pc_callback(pc);
     }
 
     /// Takes an NMI if one is due, or else a maskable interrupt if one is due and not held off.

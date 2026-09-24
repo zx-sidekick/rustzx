@@ -97,7 +97,7 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Problem.** ZX Sidekick answers ROM routines itself and steers games between instructions, which means pushing, popping and returning from outside the processor. It kept its own copies of those stack operations.
 
-**Change.** `Z80::push(bus, value)`, `Z80::pop(bus)` and `Z80::ret(bus)`. They use `read_internal`/`write_internal`, so no time passes and nothing is contended. `ret` leaves the processor as `RET` does (PC, SP, MEMPTR = PC, and Q = 0 for a following `SCF`/`CCF`), except what fetching an opcode does (R and time). The existing `push_pc_to_stack`/`pop_pc_from_stack`, which `rustzx-core` uses for snapshots, are unchanged. Tested in `tests/integration/stack.rs`.
+**Change.** `Z80::push(bus, value)`, `Z80::pop(bus)` and `Z80::ret(bus)`. They use `read_internal`/`write_internal`, so no time passes and nothing is contended. `ret` leaves the processor as `RET` does (PC, SP, MEMPTR = PC, Q = 0 for a following `SCF`/`CCF`, the end of the moment after `LD A,I`, and a `pc_callback` to the bus), except what fetching an opcode does (R and time). The existing `push_pc_to_stack`/`pop_pc_from_stack`, which `rustzx-core` uses for SNA snapshots and tape fast-loading and which go through the contended bus, are unchanged. Tested in `tests/integration/stack.rs`.
 
 ## Using it
 

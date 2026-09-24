@@ -1,6 +1,6 @@
 //! `Z80::push`, `pop` and `ret`: the stack operations, for callers acting between instructions.
 
-use crate::{snapshot, TestingBus};
+use crate::{snapshot, Event, TestingBus};
 use rustzx_z80::Z80;
 
 const PUSH_BC: u8 = 0xC5;
@@ -54,7 +54,7 @@ fn stack_wraps_around_memory() {
 }
 
 /// The helpers are not instructions: no time passes, nothing is contended, and the bus hears of
-/// no wait at all.
+/// no wait at all. Only `ret` tells the bus where the program counter went, as `RET` does.
 #[test]
 fn helpers_take_no_time() {
     let (mut cpu, mut bus) = machine(0xC000);
@@ -62,12 +62,63 @@ fn helpers_take_no_time() {
 
     cpu.push(&mut bus, 0x1234);
     cpu.pop(&mut bus);
+    assert_eq!(bus.take_events(), []);
     cpu.regs.set_sp(0xBFFC);
     cpu.ret(&mut bus);
 
     assert_eq!(bus.clocks(), 0);
     assert_eq!(bus.take_waits(), []);
-    assert_eq!(bus.take_events(), []);
+    assert_eq!(bus.take_events(), [Event::Pc(0x9000)]);
+}
+
+/// A breakpoint on the address `ret` returns to is hit, as it is after `RET`.
+#[test]
+fn ret_reaches_a_breakpoint() {
+    let (mut cpu, mut bus) = machine(0xBFFE);
+    bus.load_to_memory(&[0x00, 0x90], 0xBFFE);
+    bus.add_breakpoint(0x9000);
+
+    cpu.ret(&mut bus);
+
+    assert_eq!(bus.last_breakpoint(), Some(0x9000));
+}
+
+#[test]
+fn ret_wraps_around_memory() {
+    let (mut cpu, mut bus) = machine(0xFFFF);
+    bus.load_to_memory(&[0x34], 0xFFFF);
+    bus.load_to_memory(&[0x12], 0x0000);
+
+    cpu.ret(&mut bus);
+
+    assert_eq!((cpu.regs.get_pc(), cpu.regs.get_sp()), (0x1234, 0x0001));
+}
+
+/// `ret` is an instruction's worth of time after `LD A,I`, as `RET` is: a maskable interrupt
+/// taken after it keeps the P/V that `LD A,I` set, where one taken straight after `LD A,I`
+/// would clear it.
+#[test]
+fn ret_after_ld_a_i_is_like_ret() {
+    let run = |use_helper: bool| {
+        // LD A,I with interrupts enabled (P/V = IFF2 = 1), then return, then INT
+        let (mut cpu, mut bus) = machine(0xBFFE);
+        bus.load_to_memory(&[0xED, 0x57, RET], 0x8000);
+        bus.load_to_memory(&[0x00, 0x90], 0xBFFE);
+        cpu.set_im(1);
+        cpu.regs.set_iff1(true);
+        cpu.regs.set_iff2(true);
+        cpu.emulate(&mut bus);
+        if use_helper {
+            cpu.ret(&mut bus);
+        } else {
+            cpu.emulate(&mut bus);
+        }
+        bus.set_interrupt(true);
+        cpu.step(&mut bus);
+        cpu.regs.get_flags() & 0x04
+    };
+    assert_eq!(run(false), 0x04);
+    assert_eq!(run(true), 0x04);
 }
 
 #[test]
