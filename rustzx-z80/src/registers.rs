@@ -532,12 +532,12 @@ impl Regs {
 
     #[must_use]
     pub fn get_h_alt(&self) -> u8 {
-        self.h
+        self.h_alt
     }
 
     #[must_use]
     pub fn get_l_alt(&self) -> u8 {
-        self.l
+        self.l_alt
     }
 
     #[must_use]
@@ -618,17 +618,9 @@ impl Regs {
         let cf = self.f & FLAG_CARRY;
         let b = self.b;
         let f = self.f;
-        // Explanation of faster "TMP = Bo + (NF ? -CF : CF)" calculation logic without branch:
-        //
-        // Basically, when CF is 1, it either stays 1 if NF is 0, or subtracted by 2 if NF
-        // is 1 (Which makes -CF part) - NF and CF shofts will produce bit at position 1 which will
-        // result in either 2 or 0.
-        //
-        // When CF is 0, no mater NF result will be 0
-        let tmp = b.wrapping_add(cf.wrapping_sub(
-            (f >> flag_pos(FLAG_SIGN.wrapping_sub(1)))
-                & (cf << flag_pos(FLAG_CARRY.wrapping_add(1))),
-        ));
+        // "TMP = Bo + (NF ? -CF : CF)" without a branch. CF is 0 or 1; `cf << 1` lines it up with
+        // NF (bit 1), so the subtrahend is 2 exactly when both are set, turning +1 into -1.
+        let tmp = b.wrapping_add(cf.wrapping_sub(f & FLAG_SUB & (cf << flag_pos(FLAG_SUB))));
         // HF = (TMP ^ Bo).4;
         let hf = (tmp ^ b) & FLAG_HALF_CARRY;
         // PV = ((T & 7) ^ Bo ^ (TMP & 7)).parity

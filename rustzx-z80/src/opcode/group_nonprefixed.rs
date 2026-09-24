@@ -188,8 +188,11 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 U1::N0 => {
                     let addr = cpu.fetch_word(bus, 3);
                     bus.write(addr, cpu.regs.get_acc(), 3);
-                    cpu.regs
-                        .set_mem_ptr(addr.wrapping_add(1) | u16::from(cpu.regs.get_acc()) << 8);
+                    // MEMPTR = A : (nn + 1) low byte
+                    cpu.regs.set_mem_ptr(u16::from_le_bytes([
+                        addr.wrapping_add(1).to_le_bytes()[0],
+                        cpu.regs.get_acc(),
+                    ]));
                 }
                 // LD A, (BC) // 4 + 3 = 7 clocks
                 // [0b00001010] : 0x0A
@@ -661,8 +664,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let acc = cpu.regs.get_acc();
                     // write Acc to port A*256 + operand
                     bus.write_io((u16::from(acc) << 8) | u16::from(data), acc);
+                    // MEMPTR = A : (n + 1) low byte
                     cpu.regs
-                        .set_mem_ptr(u16::from(data).wrapping_add(1) | u16::from(acc) << 8);
+                        .set_mem_ptr(u16::from_le_bytes([data.wrapping_add(1), acc]));
                 }
                 // IN A, (n)
                 // [0b11011011] : DB

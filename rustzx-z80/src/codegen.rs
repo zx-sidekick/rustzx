@@ -5,7 +5,7 @@ pub trait CodegenMemorySpace {
     fn write_word(&mut self, addr: u16, word: u16) {
         let [l, h] = word.to_le_bytes();
         self.write_byte(addr, l);
-        self.write_byte(addr, h);
+        self.write_byte(addr.wrapping_add(1), h);
     }
 }
 
@@ -45,7 +45,7 @@ impl<'a, Mem: CodegenMemorySpace> CodeGenerator<'a, Mem> {
 
     fn write_byte(&mut self, byte: u8) {
         self.mem.write_byte(self.current_addr, byte);
-        self.current_addr += 1;
+        self.current_addr = self.current_addr.wrapping_add(1);
     }
 
     fn write_word(&mut self, word: u16) {

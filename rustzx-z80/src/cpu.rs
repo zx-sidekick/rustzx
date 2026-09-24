@@ -5,7 +5,7 @@ use crate::{
         execute_bits, execute_extended, execute_normal, execute_pop_16, execute_push_16, Opcode,
         Prefix,
     },
-    RegName16, Regs, Z80Bus,
+    RegName16, Regs, Z80Bus, FLAG_PV,
 };
 
 /// Interrupt mode enum
@@ -36,6 +36,30 @@ pub enum Step {
     Instruction,
 }
 
+/// The NMI input, which is edge-triggered: the line going active latches one NMI, however long it
+/// then stays active, and the NMI waits in the latch while interrupts are held off.
+#[derive(Clone, Default)]
+struct NmiLatch {
+    /// Level of the line when it was last sampled
+    line: bool,
+    /// The line has gone active since the last NMI was taken
+    pending: bool,
+}
+
+impl NmiLatch {
+    fn sample(&mut self, line: bool) {
+        if line && !self.line {
+            self.pending = true;
+        }
+        self.line = line;
+    }
+
+    /// Returns whether an NMI is due, and clears it.
+    fn take(&mut self) -> bool {
+        core::mem::take(&mut self.pending)
+    }
+}
+
 /// Z80 Processor struct
 #[derive(Clone)]
 pub struct Z80 {
@@ -52,6 +76,9 @@ pub struct Z80 {
     /// type of interrupt
     pub(crate) int_mode: IntMode,
     active_prefix: Prefix,
+    nmi: NmiLatch,
+    /// The last instruction was `LD A,I` or `LD A,R`, which copy IFF2 into P/V
+    pub(crate) iff2_read: bool,
 }
 
 impl Default for Z80 {
@@ -62,6 +89,8 @@ impl Default for Z80 {
             skip_interrupt: false,
             int_mode: IntMode::Im0,
             active_prefix: Prefix::None,
+            nmi: NmiLatch::default(),
+            iff2_read: false,
         }
     }
 }
@@ -128,7 +157,7 @@ impl Z80 {
 
     /// Takes an NMI or maskable interrupt if one is due. Returns whether one was taken.
     fn handle_interrupt(&mut self, bus: &mut impl Z80Bus) -> bool {
-        if bus.nmi_active() {
+        if self.nmi.take() {
             // q resets during interrupt
             self.regs.clear_q();
             // Release halt line on the bus
@@ -151,6 +180,11 @@ impl Z80 {
             // 5 + 3 + 3 = 11 clocks
             true
         } else if bus.int_active() && self.regs.get_iff1() {
+            // On an NMOS Z80, accepting the interrupt resets IFF2 while `LD A,I` or `LD A,R`
+            // is still copying it into P/V, so P/V reads 0
+            if self.iff2_read {
+                self.regs.set_flags(self.regs.get_flags() & !FLAG_PV);
+            }
             // q resets during interrupt
             self.regs.clear_q();
             // Release halt line on the bus
@@ -193,6 +227,8 @@ impl Z80 {
 
     /// Takes an interrupt if one is due and may be taken now. Returns whether one was taken.
     fn check_interrupt(&mut self, bus: &mut impl Z80Bus) -> bool {
+        self.nmi.sample(bus.nmi_active());
+
         if self.skip_interrupt {
             // allow interrupts again
             self.skip_interrupt = false;
@@ -216,8 +252,7 @@ impl Z80 {
     ///
     /// Either takes a pending interrupt, if one is due, or runs one instruction; never both.
     /// Calling `step` repeatedly runs a program as calling [`Z80::emulate`] repeatedly does, with
-    /// the same timing, as long as the bus stops reporting an NMI once it has been taken. The
-    /// difference is that after an interrupt the program counter is at the handler before any
+    /// the same timing. The difference is that after an interrupt the program counter is at the handler before any
     /// of it has run. That is where a caller can see that an interrupt happened, keep the state
     /// from just before its handler, or stop at a breakpoint on the handler's first instruction.
     ///
@@ -236,6 +271,7 @@ impl Z80 {
     /// Runs one instruction, or one more prefix of a chain of them, without looking at
     /// interrupts
     fn execute_instruction(&mut self, bus: &mut impl Z80Bus) {
+        self.iff2_read = false;
         // Actions to be performed before any opcode execution
         let before_execute_opcode = |cpu: &mut Self| {
             // Save Q register value from previous emulation step, which is later used to

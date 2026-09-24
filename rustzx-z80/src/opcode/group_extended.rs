@@ -166,6 +166,7 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                             flags |= SZF3F5_TABLE[i as usize];
                             flags |= u8::from(iff2) * FLAG_PV;
                             cpu.regs.set_flags(flags);
+                            cpu.iff2_read = true;
                         }
                         // LD A, R
                         U3::N3 => {
@@ -177,6 +178,7 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                             flags |= SZF3F5_TABLE[r as usize];
                             flags |= u8::from(iff2) * FLAG_PV;
                             cpu.regs.set_flags(flags);
+                            cpu.iff2_read = true;
                         }
                         // RRD
                         U3::N4 => {

@@ -73,7 +73,7 @@ where
     T: Z80Bus,
 {
     fn write_byte(&mut self, addr: u16, byte: u8) {
-        // write, but does not perform any processing (zero clock cycles)
-        self.write(addr, byte, 0);
+        // Not a processor access, so no wait (and no contention on a contended machine)
+        self.write_internal(addr, byte);
     }
 }
