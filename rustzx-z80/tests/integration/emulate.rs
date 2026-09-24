@@ -158,6 +158,39 @@ fn retn_from_nmi_restores_iff1() {
     assert_eq!(bus.clocks(), 11 + 14);
 }
 
+/// RETN copies IFF2 into IFF1 rather than setting it: with interrupts disabled before the NMI,
+/// they stay disabled after the return.
+#[test]
+fn retn_from_nmi_copies_iff2() {
+    let (mut cpu, mut bus) = machine(1, &[NOP]);
+    cpu.regs.set_iff1(false);
+    cpu.regs.set_iff2(false);
+    bus.load_to_memory(&[PREFIX_ED, RETN], NMI_HANDLER);
+    bus.set_nmi(true);
+
+    cpu.emulate(&mut bus);
+    bus.set_nmi(false);
+
+    assert_eq!(cpu.regs.get_pc(), PROGRAM);
+    assert!(!cpu.regs.get_iff1());
+    assert!(!cpu.regs.get_iff2());
+}
+
+/// Taking an NMI clears Q, the record of whether the last instruction changed the flags: the
+/// handler's first instruction sees Q = 0 though the instruction before the NMI changed F.
+#[test]
+fn nmi_clears_q() {
+    // SCF changes the flags, so Q = F after it
+    let (mut cpu, mut bus) = machine(1, &[0x37, NOP]);
+    cpu.emulate(&mut bus);
+    bus.set_nmi(true);
+
+    cpu.emulate(&mut bus);
+
+    assert_eq!(cpu.regs.get_pc(), NMI_HANDLER + 1);
+    assert_eq!(snapshot(&cpu).last_q, 0);
+}
+
 #[test]
 fn int_is_ignored_with_interrupts_disabled() {
     let (mut cpu, mut bus) = machine(1, &[NOP]);

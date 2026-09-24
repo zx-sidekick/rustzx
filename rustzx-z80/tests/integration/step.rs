@@ -106,6 +106,8 @@ fn check_interrupt_step(
         (before.r & 0x80) | (before.r.wrapping_add(1) & 0x7F)
     );
     assert!(!after.iff1);
+    // an NMI keeps IFF2 (for RETN to restore); a maskable interrupt clears it
+    assert_eq!(after.iff2, before.iff2 && matches!(line, Line::Nmi));
     assert!(!after.halted);
     assert!(!after.skip_interrupt);
     assert_eq!(step_bus.clocks() - clocks_before, int_clocks);
@@ -130,7 +132,9 @@ fn check_interrupt_step(
         before
     );
     let mut step_events = step_bus.take_events();
-    assert_eq!(step_events.last(), Some(&Event::Pc(handler)));
+    // exactly one callback for the interrupt, with the handler's address
+    assert_eq!(step_events.pop(), Some(Event::Pc(handler)));
+    assert!(!step_events.contains(&Event::Pc(handler)));
     let mut step_waits = step_bus.take_waits();
 
     assert_eq!(by_step.step(&mut step_bus), Step::Instruction);
@@ -143,10 +147,7 @@ fn check_interrupt_step(
     step_waits.extend(step_bus.take_waits());
     assert_eq!(step_waits, emulate_bus.take_waits());
     step_events.extend(step_bus.take_events());
-    step_events.retain(|e| *e != Event::Pc(handler));
-    let mut emulate_events = emulate_bus.take_events();
-    emulate_events.retain(|e| *e != Event::Pc(handler));
-    assert_eq!(step_events, emulate_events);
+    assert_eq!(step_events, emulate_bus.take_events());
 }
 
 #[test]
