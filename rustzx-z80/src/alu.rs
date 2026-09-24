@@ -12,8 +12,11 @@ use crate::{
 /// flags it leaves, given the flags before it.
 ///
 /// S, Z and P/V are kept from `flags`; H is the carry out of bit 11 and C the carry out of bit
-/// 15; N is reset; bits 3 and 5 are those of the sum's high byte. (The instruction also sets
-/// MEMPTR to the first operand + 1, which this leaves to the caller.)
+/// 15; N is reset; bits 3 and 5 are those of the sum's high byte.
+///
+/// Store the flags with [`Regs::set_flags`](crate::Regs::set_flags), which also records them for
+/// a following `SCF` or `CCF` as the instruction does. The instruction also sets MEMPTR to the
+/// first operand + 1, which this leaves to the caller.
 #[must_use]
 pub fn add16_flags(flags: u8, a: u16, b: u16) -> (u16, u8) {
     let sum = u32::from(a) + u32::from(b);
