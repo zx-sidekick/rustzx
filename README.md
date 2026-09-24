@@ -1,7 +1,7 @@
 RustZX
 ===============================
 
-> **This is rustzx for [ZX Sidekick](https://github.com/zx-sidekick).** The `zx-sidekick` branch carries small patches to `rustzx-z80`; [ZX-SIDEKICK.md](ZX-SIDEKICK.md) says what they are and why. Everything else is upstream's, unchanged.
+> **Archived.** This was rustzx for [ZX Sidekick](https://github.com/zx-sidekick): the `zx-sidekick` branch carried patches to `rustzx-z80`, which [ZX-SIDEKICK.md](ZX-SIDEKICK.md) describes. ZX Sidekick has since pulled the crate into its own repository, as [`crates/rustzx-z80`](https://github.com/zx-sidekick/zx-sidekick/tree/main/crates/rustzx-z80), because our goals for it differ from upstream's: we change the processor together with the games that run on it, and check it in our own machine, rather than keeping a general-purpose emulator. Nothing here is offered upstream; the patches are MIT, as upstream's code is, and anyone is welcome to take them from there.
 
 [![RustZX CI](https://github.com/rustzx/rustzx/actions/workflows/ci.yml/badge.svg)](https://github.com/rustzx/rustzx/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/rustzx)](https://crates.io/crates/rustzx)

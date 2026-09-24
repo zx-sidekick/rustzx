@@ -1,5 +1,7 @@
 # rustzx for ZX Sidekick
 
+> **Archived.** ZX Sidekick pulled `rustzx-z80` into its own repository, as [`crates/rustzx-z80`](https://github.com/zx-sidekick/zx-sidekick/tree/main/crates/rustzx-z80), because our goals for it differ from upstream's: we change the processor together with the games that run on it, and check it in our own machine, rather than keeping a general-purpose emulator. The patches below are carried on there, and none is offered upstream; they are MIT, and anyone is welcome to take them. This page describes the fork as it was when it was archived (24 September 2026).
+
 This is a fork of [rustzx/rustzx](https://github.com/rustzx/rustzx), kept by the [zx-sidekick](https://github.com/zx-sidekick) organisation for one crate in it: `rustzx-z80`, the Z80 processor.
 
 ZX Sidekick runs original ZX Spectrum games, from the player's own copy, in an emulated machine the player never sees, and adds guidance around them (a map, what is still missing, and so on). It uses `rustzx-z80` as the processor inside its own bus. Nothing else in this repository is used.
