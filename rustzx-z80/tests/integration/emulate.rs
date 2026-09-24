@@ -487,11 +487,11 @@ fn prefix_chain_waits() {
 }
 
 /// A program that counts in B and halts, interrupted in IM 2 every 1000 clocks by a handler that
-/// counts in C, and once by an NMI whose handler counts in E. Pins the end state after 100_000
+/// counts in C, and once by an NMI whose handler counts in E. Pins the end state after `100_000`
 /// clocks, so any change to how `emulate` runs, times or interrupts a program shows here.
 #[test]
 fn long_run_end_state() {
-    let (mut cpu, mut bus) = machine(2, &[EI, INC_B, HALT, JR_E, (-5i8) as u8]);
+    let (mut cpu, mut bus) = machine(2, &[EI, INC_B, HALT, JR_E, (-5i8).cast_unsigned()]);
     cpu.regs.set_iff1(false);
     cpu.regs.set_iff2(false);
     cpu.regs.set_i(0x90);
@@ -559,7 +559,7 @@ fn wait_digest(waits: &[Wait]) -> u64 {
             Wait::Internal(clk) => (2, 0, clk),
         };
         for byte in [kind, (addr >> 8) as u8, addr as u8, clk as u8] {
-            hash = (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
         }
     }
     hash

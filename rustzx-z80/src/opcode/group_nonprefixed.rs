@@ -59,6 +59,10 @@ impl FlagsCondition {
 ///
 /// DAA algorithm
 /// [link](http://www.worldofspectrum.org/faq/reference/z80reference.htm#DAA)
+#[expect(
+    clippy::too_many_lines,
+    reason = "one match arm per opcode group, following the decoding table"
+)]
 pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, prefix: Prefix) {
     // 2 first bits of opcode
     match opcode.x {
@@ -81,13 +85,13 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 U3::N2 => {
                     bus.wait_no_mreq(cpu.regs.get_ir(), 1);
                     // emulate read byte without pc shift
-                    let offset = bus.read(cpu.regs.get_pc(), 3) as i8;
+                    let offset = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                     // preform jump if needed
                     if cpu.regs.dec_reg_8(RegName8::B) != 0 {
                         bus.wait_loop(cpu.regs.get_pc(), 5);
                         cpu.regs.shift_pc(offset);
                         cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_add(1));
-                    };
+                    }
                     // inc pc, what left after reading displacement
                     cpu.regs.inc_pc();
                 }
@@ -95,7 +99,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 // [0b00011000] = 0x18
                 U3::N3 => {
                     // same rules as DJNZ
-                    let offset = bus.read(cpu.regs.get_pc(), 3) as i8;
+                    let offset = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                     bus.wait_loop(cpu.regs.get_pc(), 5);
                     cpu.regs.shift_pc(offset);
                     cpu.regs.inc_pc();
@@ -105,18 +109,18 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 // NZ [0b00100000], Z [0b00101000] NC [0b00110000] C [0b00111000]
                 U3::N4 | U3::N5 | U3::N6 | U3::N7 => {
                     // 0x20, 0x28, 0x30, 0x38
-                    let offset = bus.read(cpu.regs.get_pc(), 3) as i8;
+                    let offset = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                     // y in range 4..7
                     let cnd = FlagsCondition::from_u3(U3::from_byte(opcode.y.as_byte() - 4, 0));
                     if cnd.eval(&cpu.regs) {
                         bus.wait_loop(cpu.regs.get_pc(), 5);
                         cpu.regs.shift_pc(offset);
                         cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_add(1));
-                    };
+                    }
                     // inc pc, which left after reading displacement
                     cpu.regs.inc_pc();
                 }
-            };
+            }
         }
         // [0b00ppq001] instruction group (LD, ADD)
         U2::N0 if opcode.z == U3::N1 => {
@@ -137,18 +141,18 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let acc = cpu.regs.get_reg_16(reg_acc);
                     cpu.regs.set_mem_ptr(acc.wrapping_add(1));
                     let operand = cpu.regs.get_reg_16(reg_operand);
-                    let temp: u32 = (acc as u32).wrapping_add(operand as u32);
+                    let temp: u32 = u32::from(acc).wrapping_add(u32::from(operand));
                     // watch tables module
                     let lookup = lookup16_r12(acc, operand, temp as u16);
                     // get last flags, reset affected by instruction
                     let mut flags = cpu.regs.get_flags() & (FLAG_ZERO | FLAG_PV | FLAG_SIGN);
                     flags |= HALF_CARRY_ADD_TABLE[(lookup & 0x07) as usize];
-                    flags |= (temp > 0xFFFF) as u8 * FLAG_CARRY;
+                    flags |= u8::from(temp > 0xFFFF) * FLAG_CARRY;
                     flags |= F3F5_TABLE[((temp >> 8) as u8) as usize];
                     cpu.regs.set_flags(flags);
                     cpu.regs.set_reg_16(reg_acc, temp as u16);
                 }
-            };
+            }
         }
         // [0b00ppq010] instruction group (LD INDIRECT)
         U2::N0 if opcode.z == U3::N2 => {
@@ -159,7 +163,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     bus.write(cpu.regs.get_bc(), cpu.regs.get_acc(), 3);
                     cpu.regs.set_mem_ptr(
                         (cpu.regs.get_bc().wrapping_add(1) & 0xff)
-                            | ((cpu.regs.get_acc() as u16) << 8),
+                            | (u16::from(cpu.regs.get_acc()) << 8),
                     );
                 }
                 // LD (DE), A // 4 + 3 = 7 clocks
@@ -168,7 +172,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     bus.write(cpu.regs.get_de(), cpu.regs.get_acc(), 3);
                     cpu.regs.set_mem_ptr(
                         (cpu.regs.get_de().wrapping_add(1) & 0xff)
-                            | ((cpu.regs.get_acc() as u16) << 8),
+                            | (u16::from(cpu.regs.get_acc()) << 8),
                     );
                 }
                 // LD (nn), HL/IX/IY // 4 + 3 + 3 + 3 + 3 = 16 clocks
@@ -185,7 +189,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let addr = cpu.fetch_word(bus, 3);
                     bus.write(addr, cpu.regs.get_acc(), 3);
                     cpu.regs
-                        .set_mem_ptr(addr.wrapping_add(1) | (cpu.regs.get_acc() as u16) << 8);
+                        .set_mem_ptr(addr.wrapping_add(1) | u16::from(cpu.regs.get_acc()) << 8);
                 }
                 // LD A, (BC) // 4 + 3 = 7 clocks
                 // [0b00001010] : 0x0A
@@ -216,7 +220,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     cpu.regs.set_acc(bus.read(addr, 3));
                     cpu.regs.set_mem_ptr(addr.wrapping_add(1));
                 }
-            };
+            }
         }
         // [0b00ppq011] instruction group (INC, DEC)
         U2::N0 if opcode.z == U3::N3 => {
@@ -234,7 +238,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 U1::N1 => {
                     cpu.regs.dec_reg_16(reg);
                 }
-            };
+            }
         }
         // [0b00yyy100], [0b00yyy101] instruction group (INC, DEC) 8 bit
         U2::N0 if (opcode.z == U3::N4) || (opcode.z == U3::N5) => {
@@ -259,7 +263,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     cpu.regs.get_hl()
                 } else {
                     // we have INC/DEC (IX/IY + d)
-                    let d = bus.read(cpu.regs.get_pc(), 3) as i8;
+                    let d = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                     bus.wait_loop(cpu.regs.get_pc(), 5);
                     cpu.regs.inc_pc();
                     cpu.regs
@@ -269,7 +273,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 data = bus.read(addr, 3);
                 bus.wait_no_mreq(addr, 1);
                 operand = LoadOperand8::Indirect(addr);
-            };
+            }
             // ------------
             //   execute
             // ------------
@@ -278,14 +282,14 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
             if opcode.z == U3::N4 {
                 // INC
                 result = data.wrapping_add(1);
-                flags |= (data == 0x7F) as u8 * FLAG_PV;
+                flags |= u8::from(data == 0x7F) * FLAG_PV;
                 let lookup = lookup8_r12(data, 1, result);
                 flags |= HALF_CARRY_ADD_TABLE[(lookup & 0x07) as usize];
             } else {
                 // DEC
                 result = data.wrapping_sub(1);
                 flags |= FLAG_SUB;
-                flags |= (data == 0x80) as u8 * FLAG_PV;
+                flags |= u8::from(data == 0x80) * FLAG_PV;
                 let lookup = lookup8_r12(data, 1, result);
                 flags |= HALF_CARRY_SUB_TABLE[(lookup & 0x07) as usize];
             }
@@ -301,7 +305,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 LoadOperand8::Reg(reg) => {
                     cpu.regs.set_reg_8(reg, result);
                 }
-            };
+            }
             // Clocks:
             // Direct : 4
             // HL : 4 + 3 + 1 + 3 = 11
@@ -320,7 +324,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     cpu.regs.get_hl()
                 } else {
                     // LD (IX+d/ IY+d)
-                    let d = cpu.fetch_byte(bus, 3) as i8;
+                    let d = cpu.fetch_byte(bus, 3).cast_signed();
                     cpu.regs
                         .build_addr_with_offset(RegName16::HL.with_prefix(prefix), d)
                 };
@@ -343,7 +347,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 LoadOperand8::Reg(reg) => {
                     cpu.regs.set_reg_8(reg, data);
                 }
-            };
+            }
             // Clocks:
             // Direct: 4 + 3 = 7
             // HL: 4 + 3 + 3 = 10
@@ -362,9 +366,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                         data |= 1;
                     } else {
                         data &= 0xFE;
-                    };
+                    }
                     let mut flags = cpu.regs.get_flags() & (FLAG_PV | FLAG_SIGN | FLAG_ZERO);
-                    flags |= carry as u8 * FLAG_CARRY;
+                    flags |= u8::from(carry) * FLAG_CARRY;
                     flags |= F3F5_TABLE[data as usize];
                     cpu.regs.set_flags(flags);
                     cpu.regs.set_acc(data);
@@ -379,9 +383,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                         data |= 0x80;
                     } else {
                         data &= 0x7F;
-                    };
+                    }
                     let mut flags = cpu.regs.get_flags() & (FLAG_PV | FLAG_SIGN | FLAG_ZERO);
-                    flags |= carry as u8 * FLAG_CARRY;
+                    flags |= u8::from(carry) * FLAG_CARRY;
                     flags |= F3F5_TABLE[data as usize];
                     cpu.regs.set_flags(flags);
                     cpu.regs.set_acc(data);
@@ -396,9 +400,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                         data |= 1;
                     } else {
                         data &= 0xFE;
-                    };
+                    }
                     let mut flags = cpu.regs.get_flags() & (FLAG_PV | FLAG_SIGN | FLAG_ZERO);
-                    flags |= carry as u8 * FLAG_CARRY;
+                    flags |= u8::from(carry) * FLAG_CARRY;
                     flags |= F3F5_TABLE[data as usize];
                     cpu.regs.set_flags(flags);
                     cpu.regs.set_acc(data);
@@ -413,9 +417,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                         data |= 0x80;
                     } else {
                         data &= 0x7F;
-                    };
+                    }
                     let mut flags = cpu.regs.get_flags() & (FLAG_PV | FLAG_SIGN | FLAG_ZERO);
-                    flags |= carry as u8 * FLAG_CARRY;
+                    flags |= u8::from(carry) * FLAG_CARRY;
                     flags |= F3F5_TABLE[data as usize];
                     cpu.regs.set_flags(flags);
                     cpu.regs.set_acc(data);
@@ -431,7 +435,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                         flags |= FLAG_CARRY;
                     } else {
                         correction = 0x00_u8;
-                    };
+                    }
                     if ((acc & 0x0F) > 0x09) || ((old_flags & FLAG_HALF_CARRY) != 0) {
                         correction |= 0x06;
                     }
@@ -475,8 +479,8 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let mut flags = cpu.regs.get_flags() & (FLAG_SIGN | FLAG_PV | FLAG_ZERO);
                     flags |= ((cpu.regs.get_last_q() ^ cpu.regs.get_flags()) | data)
                         & (FLAG_F3 | FLAG_F5);
-                    flags |= old_carry as u8 * FLAG_HALF_CARRY;
-                    flags |= (!old_carry) as u8 * FLAG_CARRY;
+                    flags |= u8::from(old_carry) * FLAG_HALF_CARRY;
+                    flags |= u8::from(!old_carry) * FLAG_CARRY;
                     cpu.regs.set_flags(flags);
                 }
             }
@@ -497,7 +501,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
             let src_addr = if prefix == Prefix::None {
                 cpu.regs.get_hl()
             } else {
-                let d = bus.read(cpu.regs.get_pc(), 3) as i8;
+                let d = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                 bus.wait_loop(cpu.regs.get_pc(), 5);
                 cpu.regs.inc_pc();
 
@@ -515,7 +519,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
             let dst_addr = if prefix == Prefix::None {
                 cpu.regs.get_hl()
             } else {
-                let d = bus.read(cpu.regs.get_pc(), 3) as i8;
+                let d = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                 bus.wait_loop(cpu.regs.get_pc(), 5);
                 cpu.regs.inc_pc();
                 cpu.regs
@@ -550,7 +554,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 if prefix == Prefix::None {
                     bus.read(cpu.regs.get_hl(), 3)
                 } else {
-                    let d = bus.read(cpu.regs.get_pc(), 3) as i8;
+                    let d = bus.read(cpu.regs.get_pc(), 3).cast_signed();
                     bus.wait_loop(cpu.regs.get_pc(), 5);
                     cpu.regs.inc_pc();
                     let addr = cpu
@@ -576,7 +580,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                 // write value from stack to pc
                 execute_pop_16(cpu, bus, RegName16::PC, 3);
                 cpu.regs.set_mem_ptr(cpu.regs.get_pc());
-            };
+            }
             // Clocks:
             // 4 + 1 + [3 + 3] = 5/11
         }
@@ -625,7 +629,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                         }
                     }
                 }
-            };
+            }
         }
         // JP cc[y], nn
         // [0b11yyy010]: C2,CA,D2,DA,E2,EA,F2,FA
@@ -633,7 +637,7 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
             let addr = cpu.fetch_word(bus, 3);
             if FlagsCondition::from_u3(opcode.y).eval(&cpu.regs) {
                 cpu.regs.set_pc(addr);
-            };
+            }
             cpu.regs.set_mem_ptr(addr);
         }
         // [0b11yyy011] instruction group (assorted)
@@ -656,9 +660,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let data = cpu.fetch_byte(bus, 3);
                     let acc = cpu.regs.get_acc();
                     // write Acc to port A*256 + operand
-                    bus.write_io(((acc as u16) << 8) | data as u16, acc);
+                    bus.write_io((u16::from(acc) << 8) | u16::from(data), acc);
                     cpu.regs
-                        .set_mem_ptr((data as u16).wrapping_add(1) | (acc as u16) << 8);
+                        .set_mem_ptr(u16::from(data).wrapping_add(1) | u16::from(acc) << 8);
                 }
                 // IN A, (n)
                 // [0b11011011] : DB
@@ -667,10 +671,10 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
                     let acc = cpu.regs.get_acc();
                     // read from port A*256 + operand to Acc
                     cpu.regs
-                        .set_acc(bus.read_io(((acc as u16) << 8) | (data as u16)));
+                        .set_acc(bus.read_io((u16::from(acc) << 8) | u16::from(data)));
                     cpu.regs.set_mem_ptr(
-                        ((acc as u16) << 8)
-                            .wrapping_add(data as u16)
+                        (u16::from(acc) << 8)
+                            .wrapping_add(u16::from(data))
                             .wrapping_add(1),
                     );
                 }
@@ -789,9 +793,9 @@ pub fn execute_normal(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode, pref
             execute_push_16(cpu, bus, RegName16::PC, 3);
             // CALL y*8
             cpu.regs
-                .set_reg_16(RegName16::PC, (opcode.y.as_byte() as u16) * 8);
+                .set_reg_16(RegName16::PC, u16::from(opcode.y.as_byte()) * 8);
             cpu.regs.set_mem_ptr(cpu.regs.get_pc());
             // Clocks: 4 + 1 + 3 + 3 = 11
         }
-    };
+    }
 }

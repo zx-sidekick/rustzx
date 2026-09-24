@@ -11,3 +11,12 @@ repository.workspace = true
 
 [dev-dependencies]
 paste = "1.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+# A Z80 works in 8 and 16 bits: taking the low byte of a wider result (`temp as u8`) is how its
+# arithmetic is written, not an accident.
+cast_possible_truncation = "allow"

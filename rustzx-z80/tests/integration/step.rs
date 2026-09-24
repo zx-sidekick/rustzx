@@ -463,7 +463,7 @@ fn check_same_run(im: u8, program: &[u8], handler: &[u8], schedule: Schedule, cl
 }
 
 /// Counts in B and halts; interrupts count in C.
-const COUNTING: [u8; 5] = [EI, INC_B, HALT, JR_E, (-5i8) as u8];
+const COUNTING: [u8; 5] = [EI, INC_B, HALT, JR_E, (-5i8).cast_unsigned()];
 const COUNTING_HANDLER: [u8; 3] = [INC_C, EI, RET];
 
 /// Toggles interrupts, runs prefix chains, and never halts; interrupts count in E and return
@@ -490,7 +490,7 @@ const BUSY: [u8; 22] = [
     0x23, // INC IX
     0x37, // SCF
     JR_E,
-    (-22i8) as u8,
+    (-22i8).cast_unsigned(),
 ];
 const BUSY_HANDLER: [u8; 4] = [INC_E, 0xFB, PREFIX_ED, RETN]; // INC E; EI; RETN
 

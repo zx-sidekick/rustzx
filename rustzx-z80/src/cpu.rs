@@ -88,16 +88,22 @@ impl Z80 {
     }
 
     /// Checks is cpu halted
+    #[must_use]
     pub fn is_halted(&self) -> bool {
         self.halted
     }
 
     /// Returns current interrupt mode
+    #[must_use]
     pub fn get_im(&self) -> IntMode {
         self.int_mode
     }
 
     /// Changes interrupt mode
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is not 0, 1 or 2.
     pub fn set_im(&mut self, value: u8) {
         assert!(value < 3);
         self.int_mode = match value {
@@ -169,8 +175,8 @@ impl Z80 {
                 IntMode::Im2 => {
                     execute_push_16(self, bus, RegName16::PC, 3);
                     // build interrupt vector
-                    let addr = (((self.regs.get_i() as u16) << 8) & 0xFF00)
-                        | ((bus.read_interrupt() as u16) & 0x00FF);
+                    let addr = ((u16::from(self.regs.get_i()) << 8) & 0xFF00)
+                        | (u16::from(bus.read_interrupt()) & 0x00FF);
                     let addr = bus.read_word(addr, 3);
                     self.regs.set_pc(addr);
                     bus.wait_internal(7);
@@ -187,12 +193,12 @@ impl Z80 {
 
     /// Takes an interrupt if one is due and may be taken now. Returns whether one was taken.
     fn check_interrupt(&mut self, bus: &mut impl Z80Bus) -> bool {
-        if !self.skip_interrupt {
-            self.handle_interrupt(bus)
-        } else {
+        if self.skip_interrupt {
             // allow interrupts again
             self.skip_interrupt = false;
             false
+        } else {
+            self.handle_interrupt(bus)
         }
     }
 
@@ -237,18 +243,22 @@ impl Z80 {
             cpu.regs.step_q();
         };
 
-        let byte1 = if self.active_prefix != Prefix::None {
+        let byte1 = if self.active_prefix == Prefix::None {
+            self.regs.inc_r();
+            self.fetch_byte(bus, 4)
+        } else {
             let tmp = self.active_prefix.to_byte().unwrap();
             self.active_prefix = Prefix::None;
             tmp
-        } else {
-            self.regs.inc_r();
-            self.fetch_byte(bus, 4)
         };
         let prefix_hi = Prefix::from_byte(byte1);
-        if prefix_hi != Prefix::None {
+        if prefix_hi == Prefix::None {
+            let opcode = Opcode::from_byte(byte1);
+            before_execute_opcode(self);
+            execute_normal(self, bus, opcode, Prefix::None);
+        } else {
             match prefix_hi {
-                prefix_single @ Prefix::DD | prefix_single @ Prefix::FD => {
+                prefix_single @ (Prefix::DD | Prefix::FD) => {
                     let byte2 = self.fetch_byte(bus, 4);
                     self.regs.inc_r();
                     let prefix_lo = Prefix::from_byte(byte2);
@@ -266,7 +276,7 @@ impl Z80 {
                             before_execute_opcode(self);
                             execute_normal(self, bus, opcode, prefix_single);
                         }
-                    };
+                    }
                 }
                 Prefix::CB => {
                     // opcode will be read in the called
@@ -281,12 +291,8 @@ impl Z80 {
                     execute_extended(self, bus, opcode);
                 }
                 _ => unreachable!(),
-            };
-        } else {
-            let opcode = Opcode::from_byte(byte1);
-            before_execute_opcode(self);
-            execute_normal(self, bus, opcode, Prefix::None);
-        };
+            }
+        }
         // Allow bus implementation to process pc-based events
         bus.pc_callback(self.regs.get_pc());
     }

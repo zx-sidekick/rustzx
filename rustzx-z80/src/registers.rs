@@ -5,16 +5,17 @@ use crate::{
     tables::PARITY_TABLE,
 };
 
-pub const FLAG_CARRY: u8 = 0b00000001;
-pub const FLAG_SUB: u8 = 0b00000010;
-pub const FLAG_PV: u8 = 0b00000100;
-pub const FLAG_F3: u8 = 0b00001000;
-pub const FLAG_HALF_CARRY: u8 = 0b00010000;
-pub const FLAG_F5: u8 = 0b00100000;
-pub const FLAG_ZERO: u8 = 0b01000000;
-pub const FLAG_SIGN: u8 = 0b10000000;
+pub const FLAG_CARRY: u8 = 0b0000_0001;
+pub const FLAG_SUB: u8 = 0b0000_0010;
+pub const FLAG_PV: u8 = 0b0000_0100;
+pub const FLAG_F3: u8 = 0b0000_1000;
+pub const FLAG_HALF_CARRY: u8 = 0b0001_0000;
+pub const FLAG_F5: u8 = 0b0010_0000;
+pub const FLAG_ZERO: u8 = 0b0100_0000;
+pub const FLAG_SIGN: u8 = 0b1000_0000;
 
 // Returns flag position in binary. Useful for making binary shifts in code more obvious.
+#[must_use]
 pub const fn flag_pos(flag: u8) -> u8 {
     flag.trailing_zeros() as u8
 }
@@ -36,6 +37,7 @@ impl RegName8 {
     /// Returns 8 bit general purpose register name from code.
     /// # Failures
     /// Returns None if code equals `0b110` (Indirect)
+    #[must_use]
     pub fn from_u3(byte: U3) -> Option<Self> {
         match byte {
             U3::N0 => Some(RegName8::B),
@@ -50,9 +52,10 @@ impl RegName8 {
     }
 
     /// Returns 8-bit register name for prefixed opcode version
+    #[must_use]
     pub fn with_prefix(self, pref: Prefix) -> Self {
         match self {
-            reg @ RegName8::H | reg @ RegName8::L => match pref {
+            reg @ (RegName8::H | RegName8::L) => match pref {
                 Prefix::DD => match reg {
                     RegName8::H => RegName8::IXH,
                     RegName8::L => RegName8::IXL,
@@ -83,6 +86,7 @@ pub enum RegName16 {
 }
 impl RegName16 {
     /// Returns 16 bit general purpose register name from its code. featuring AF
+    #[must_use]
     pub fn from_u2_af(byte: U2) -> RegName16 {
         match byte {
             U2::N0 => RegName16::BC,
@@ -93,6 +97,7 @@ impl RegName16 {
     }
 
     /// Returns 16 bit general purpose register name from its code. featuring SP
+    #[must_use]
     pub fn from_u2_sp(byte: U2) -> RegName16 {
         match byte {
             U2::N0 => RegName16::BC,
@@ -103,6 +108,7 @@ impl RegName16 {
     }
 
     // Returns 16-bit register name for prefixed opcode
+    #[must_use]
     pub fn with_prefix(self, pref: Prefix) -> Self {
         match self {
             RegName16::HL => match pref {
@@ -141,6 +147,7 @@ pub struct Regs {
 }
 
 impl Regs {
+    #[must_use]
     pub fn get_reg_8(&self, index: RegName8) -> u8 {
         match index {
             RegName8::A => self.a,
@@ -176,10 +183,11 @@ impl Regs {
             RegName8::IYL => self.iyl = value,
             RegName8::I => self.i = value,
             RegName8::R => self.r = value,
-        };
+        }
         value
     }
 
+    #[must_use]
     pub fn get_reg_16(&self, index: RegName16) -> u16 {
         match index {
             RegName16::PC => self.pc,
@@ -230,7 +238,7 @@ impl Regs {
                 self.h = h;
                 self.l = l;
             }
-        };
+        }
         value
     }
 
@@ -255,12 +263,15 @@ impl Regs {
     }
 
     pub(crate) fn build_addr_with_offset(&mut self, reg: RegName16, displacement: i8) -> u16 {
-        let word = (self.get_reg_16(reg) as i32).wrapping_add(displacement as i32) as u16;
+        let word = self
+            .get_reg_16(reg)
+            .wrapping_add_signed(i16::from(displacement));
         // Any (REG + d) access changes MEMPTR to calculated value
         self.set_mem_ptr(word);
         word
     }
 
+    #[must_use]
     pub fn get_pc(&self) -> u16 {
         self.pc
     }
@@ -280,6 +291,7 @@ impl Regs {
         self.mem_ptr
     }
 
+    #[must_use]
     pub fn get_mem_ptr(&self) -> u16 {
         self.mem_ptr
     }
@@ -297,6 +309,7 @@ impl Regs {
         self.q = self.f;
     }
 
+    #[must_use]
     pub fn get_last_q(&self) -> u8 {
         self.last_q
     }
@@ -308,22 +321,26 @@ impl Regs {
 
     /// Displaces program counter with signed value
     pub fn shift_pc(&mut self, displacement: i8) -> u16 {
-        self.pc = (self.pc as i32).wrapping_add(displacement as i32) as u16;
+        self.pc = self.pc.wrapping_add_signed(i16::from(displacement));
         self.pc
     }
 
+    #[must_use]
     pub fn get_af(&self) -> u16 {
         u16::from_le_bytes([self.f, self.a])
     }
 
+    #[must_use]
     pub fn get_bc(&self) -> u16 {
         u16::from_le_bytes([self.c, self.b])
     }
 
+    #[must_use]
     pub fn get_ix(&self) -> u16 {
         u16::from_le_bytes([self.ixl, self.ixh])
     }
 
+    #[must_use]
     pub fn get_iy(&self) -> u16 {
         u16::from_le_bytes([self.iyl, self.iyh])
     }
@@ -342,6 +359,7 @@ impl Regs {
         value
     }
 
+    #[must_use]
     pub fn get_hl(&self) -> u16 {
         u16::from_le_bytes([self.l, self.h])
     }
@@ -353,6 +371,7 @@ impl Regs {
         value
     }
 
+    #[must_use]
     pub fn get_de(&self) -> u16 {
         u16::from_le_bytes([self.e, self.d])
     }
@@ -388,6 +407,7 @@ impl Regs {
         self.sp
     }
 
+    #[must_use]
     pub fn get_sp(&self) -> u16 {
         self.sp
     }
@@ -397,14 +417,17 @@ impl Regs {
         self.sp
     }
 
+    #[must_use]
     pub fn get_ir(&self) -> u16 {
-        ((self.i as u16) << 8) | (self.r as u16)
+        (u16::from(self.i) << 8) | u16::from(self.r)
     }
 
+    #[must_use]
     pub fn get_acc(&self) -> u8 {
         self.a
     }
 
+    #[must_use]
     pub fn get_acc_alt(&self) -> u8 {
         self.a_alt
     }
@@ -420,14 +443,17 @@ impl Regs {
         self.f
     }
 
+    #[must_use]
     pub fn get_flags(&self) -> u8 {
         self.f
     }
 
+    #[must_use]
     pub fn get_flags_alt(&self) -> u8 {
         self.f_alt
     }
 
+    #[must_use]
     pub fn get_i(&self) -> u8 {
         self.i
     }
@@ -437,6 +463,7 @@ impl Regs {
         self.i
     }
 
+    #[must_use]
     pub fn get_r(&self) -> u8 {
         self.r
     }
@@ -453,58 +480,72 @@ impl Regs {
         r
     }
 
+    #[must_use]
     pub fn get_b(&self) -> u8 {
         self.b
     }
 
+    #[must_use]
     pub fn get_c(&self) -> u8 {
         self.c
     }
 
+    #[must_use]
     pub fn get_d(&self) -> u8 {
         self.d
     }
 
+    #[must_use]
     pub fn get_e(&self) -> u8 {
         self.e
     }
 
+    #[must_use]
     pub fn get_h(&self) -> u8 {
         self.h
     }
 
+    #[must_use]
     pub fn get_l(&self) -> u8 {
         self.l
     }
 
+    #[must_use]
     pub fn get_b_alt(&self) -> u8 {
         self.b_alt
     }
 
+    #[must_use]
     pub fn get_c_alt(&self) -> u8 {
         self.c_alt
     }
 
+    #[must_use]
     pub fn get_d_alt(&self) -> u8 {
         self.d_alt
     }
 
+    #[must_use]
     pub fn get_e_alt(&self) -> u8 {
         self.e_alt
     }
 
+    #[must_use]
     pub fn get_h_alt(&self) -> u8 {
         self.h
     }
 
+    #[must_use]
     pub fn get_l_alt(&self) -> u8 {
         self.l
     }
 
+    #[must_use]
     pub fn get_iff1(&self) -> bool {
         self.iff1
     }
 
+    #[must_use]
     pub fn get_iff2(&self) -> bool {
         self.iff2
     }
@@ -544,7 +585,7 @@ impl Regs {
     /// which changes F3, F5, HF and PV.
     ///
     /// Implementation was derived based on the following
-    /// research: https://github.com/MrKWatkins/ZXSpectrumNextTests/tree/develop/Tests/ZX48_ZX128/Z80BlockInstructionFlags
+    /// research: <https://github.com/MrKWatkins/ZXSpectrumNextTests/tree/develop/Tests/ZX48_ZX128/Z80BlockInstructionFlags>
     ///
     /// ### Original calculation algorithm:
     /// M is the value written to or read from the I/O port == (HL), Co/Lo/Bo are "output" values of
@@ -564,8 +605,8 @@ impl Regs {
     /// HF = (TMP ^ Bo).4;
     /// PV = ((T & 7) ^ Bo ^ (TMP & 7)).parity
     /// ```
-    /// ### RustZX notes
-    /// RustZX code improves further, removing need for ternary operator during
+    /// ### `RustZX` notes
+    /// `RustZX` code improves further, removing need for ternary operator during
     /// TMP calculation
     pub fn update_flags_block_io_cycle(&mut self, opcode: BlockIoOpcode, m: u8) {
         let t = match opcode {
@@ -602,6 +643,7 @@ impl Regs {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum BlockIoOpcode {
     Inir,
     Indr,

@@ -38,10 +38,11 @@ pub struct TestingBus {
 }
 
 impl TestingBus {
+    #[must_use]
     pub fn new(memory_size: usize) -> Self {
         Self {
-            memory: vec![0; memory_size as usize],
-            breakpoints: Default::default(),
+            memory: vec![0; memory_size],
+            breakpoints: HashSet::default(),
             last_breakpoint: None,
             interrupt: false,
             nmi: false,
@@ -90,6 +91,7 @@ impl TestingBus {
     }
 
     /// Clocks (T-states) waited so far.
+    #[must_use]
     pub fn clocks(&self) -> usize {
         self.clocks
     }
@@ -127,12 +129,17 @@ impl TestingBus {
     }
 
     /// All of memory.
+    #[must_use]
     pub fn memory(&self) -> &[u8] {
         &self.memory
     }
 }
 
 /// Everything about a processor that its public interface shows.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "mirrors the processor's flip-flops and flags"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
     pub af: u16,
@@ -158,6 +165,7 @@ pub struct State {
     pub skip_interrupt: bool,
 }
 
+#[must_use]
 pub fn snapshot(cpu: &Z80) -> State {
     let r = &cpu.regs;
     let pair = |h: u8, l: u8| u16::from_be_bytes([h, l]);

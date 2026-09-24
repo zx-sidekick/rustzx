@@ -16,6 +16,7 @@ pub enum Prefix {
 
 impl Prefix {
     /// Returns prefix type from byte value
+    #[must_use]
     pub fn from_byte(data: u8) -> Prefix {
         match data {
             0xCB => Prefix::CB,
@@ -27,6 +28,7 @@ impl Prefix {
     }
 
     /// Transforms prefix back to byte
+    #[must_use]
     pub fn to_byte(self) -> Option<u8> {
         match self {
             Prefix::DD => Some(0xDD),
@@ -39,18 +41,21 @@ impl Prefix {
 }
 
 /// Operand for 8-bit LD instructions
+#[derive(Clone, Copy)]
 pub enum LoadOperand8 {
     Indirect(u16),
     Reg(RegName8),
 }
 
 /// Operand for 8-bit Bit instructions
+#[derive(Clone, Copy)]
 pub enum BitOperand8 {
     Indirect(u16),
     Reg(RegName8),
 }
 
 /// Direction of address change in block functions
+#[derive(Clone, Copy)]
 pub enum BlockDir {
     Inc,
     Dec,

@@ -21,7 +21,7 @@ pub fn execute_rot(cpu: &mut Z80, bus: &mut impl Z80Bus, rot_code: U3, operand: 
             data = (data << 1) & 0xFE;
             if carry_bit {
                 data |= 0x01;
-            };
+            }
         }
         // RRC
         U3::N1 => {
@@ -29,7 +29,7 @@ pub fn execute_rot(cpu: &mut Z80, bus: &mut impl Z80Bus, rot_code: U3, operand: 
             data = (data >> 1) & 0x7F;
             if carry_bit {
                 data |= 0x80;
-            };
+            }
         }
         // RL
         U3::N2 => {
@@ -37,7 +37,7 @@ pub fn execute_rot(cpu: &mut Z80, bus: &mut impl Z80Bus, rot_code: U3, operand: 
             data = (data << 1) & 0xFE;
             if old_carry != 0 {
                 data |= 0x01;
-            };
+            }
         }
         // RR
         U3::N3 => {
@@ -45,7 +45,7 @@ pub fn execute_rot(cpu: &mut Z80, bus: &mut impl Z80Bus, rot_code: U3, operand: 
             data = (data >> 1) & 0x7F;
             if old_carry != 0 {
                 data |= 0x80;
-            };
+            }
         }
         // SLA
         U3::N4 => {
@@ -67,8 +67,8 @@ pub fn execute_rot(cpu: &mut Z80, bus: &mut impl Z80Bus, rot_code: U3, operand: 
             carry_bit = (data & 0x01) != 0;
             data = (data >> 1) & 0x7F;
         }
-    };
-    flags |= carry_bit as u8 * FLAG_CARRY;
+    }
+    flags |= u8::from(carry_bit) * FLAG_CARRY;
     flags |= SZPF3F5_TABLE[data as usize];
     match operand {
         BitOperand8::Indirect(addr) => {
@@ -77,7 +77,7 @@ pub fn execute_rot(cpu: &mut Z80, bus: &mut impl Z80Bus, rot_code: U3, operand: 
         BitOperand8::Reg(reg) => {
             cpu.regs.set_reg_8(reg, data);
         }
-    };
+    }
     cpu.regs.set_flags(flags);
     data
 }

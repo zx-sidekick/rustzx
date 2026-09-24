@@ -63,6 +63,10 @@ Tested in `tests/integration/interrupt.rs`: the handler not having run after `St
 
 **Change.** The comments now say what a caller needs: while halted, the program counter stays at the `HALT` and moves past it when an interrupt is taken; `skip_interrupt` is set by `EI`, `DI` and chained `DD`/`FD` prefixes, and holds off interrupts for one step. `tests/integration/interrupt.rs` restores a halted state and checks where the interrupt returns.
 
+### 4. No `unsafe`, and pedantic clippy
+
+**Change.** `rustzx-z80/Cargo.toml` forbids `unsafe` code (there was none) and denies clippy's pedantic lints, so `cargo clippy -p rustzx-z80 --all-targets` fails on any warning. The code was brought in line without changing behaviour: explicit `u16::from` widening, `cast_signed()` for displacement bytes, `wrapping_add_signed` for relative addresses, `#[must_use]` on getters, reasons on the ignored zexall tests. Two lints are relaxed, each with its reason written next to it: truncating casts (a Z80 takes the low byte of wider results everywhere), and the length of the two opcode dispatch functions (one match arm per opcode group).
+
 ## Using it
 
 The crate's name and version are unchanged, so it replaces the published crate for a project that depends on `rustzx-z80 = "0.16"`:
@@ -77,6 +81,7 @@ Pin a commit rather than the branch, so a rebase here cannot change a build. Thi
 ## How it is checked
 
 ```
+cargo clippy -p rustzx-z80 --all-targets
 cargo test --release -p rustzx-z80 -- --include-ignored
 cargo test --release -p rustzx-test -- --ignored z80full z80ccf z80memptr
 ```

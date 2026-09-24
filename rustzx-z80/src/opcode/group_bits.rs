@@ -21,7 +21,7 @@ pub fn execute_bits(cpu: &mut Z80, bus: &mut impl Z80Bus, prefix: Prefix) {
         (opcode, operand)
     } else {
         // Prefixed opcode with `xx xx dd nn` format
-        let displacement = cpu.fetch_byte(bus, 3) as i8;
+        let displacement = cpu.fetch_byte(bus, 3).cast_signed();
         let addr = cpu
             .regs
             .build_addr_with_offset(RegName16::HL.with_prefix(prefix), displacement);
@@ -54,10 +54,10 @@ pub fn execute_bits(cpu: &mut Z80, bus: &mut impl Z80Bus, prefix: Prefix) {
                     // only carry is not affected;
                     let mut flags = cpu.regs.get_flags() & FLAG_CARRY;
                     flags |= FLAG_HALF_CARRY;
-                    flags |= (!bit_is_set) as u8 * (FLAG_ZERO | FLAG_PV);
+                    flags |= u8::from(!bit_is_set) * (FLAG_ZERO | FLAG_PV);
                     // NOTE: according to FUSE.
                     // maybe must be based on current bit or something?
-                    flags |= ((data & 0x80 != 0) && (bit_number == 7)) as u8 * FLAG_SIGN;
+                    flags |= u8::from((data & 0x80 != 0) && (bit_number == 7)) * FLAG_SIGN;
                     if let BitOperand8::Indirect(_addr) = operand {
                         flags |= ((cpu.regs.get_mem_ptr() >> 8) as u8) & (FLAG_F3 | FLAG_F5);
                     } else {
@@ -78,7 +78,7 @@ pub fn execute_bits(cpu: &mut Z80, bus: &mut impl Z80Bus, prefix: Prefix) {
                         BitOperand8::Reg(reg) => {
                             cpu.regs.set_reg_8(reg, result);
                         }
-                    };
+                    }
                     result
                 }
                 // SET y, r[z]
@@ -92,10 +92,10 @@ pub fn execute_bits(cpu: &mut Z80, bus: &mut impl Z80Bus, prefix: Prefix) {
                         BitOperand8::Reg(reg) => {
                             cpu.regs.set_reg_8(reg, result);
                         }
-                    };
+                    }
                     result
                 }
-                _ => unreachable!(),
+                U2::N0 => unreachable!(),
             }
         }
     };
@@ -106,7 +106,7 @@ pub fn execute_bits(cpu: &mut Z80, bus: &mut impl Z80Bus, prefix: Prefix) {
             // if instruction is not BIT
             if opcode.x != U2::N1 {
                 cpu.regs.set_reg_8(reg, result);
-            };
+            }
         }
     }
 }

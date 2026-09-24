@@ -34,7 +34,7 @@ pub trait Z80Bus {
     // Normal write to memory, contention may be applied
     fn write(&mut self, addr: u16, value: u8, clk: usize) {
         self.wait_mreq(addr, clk);
-        self.write_internal(addr, value)
+        self.write_internal(addr, value);
     }
     // Method for reading from io port.
     fn read_io(&mut self, port: u16) -> u8;

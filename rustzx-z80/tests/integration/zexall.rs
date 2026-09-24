@@ -19,7 +19,6 @@ const MEMORY_SIZE: usize = 64 * 1024;
 const RET_OPCODE: u8 = 0xc9;
 
 use crate::TestingBus;
-use core::panic;
 use rustzx_z80::Z80;
 
 struct ZexallTester {
@@ -80,11 +79,9 @@ impl ZexallTester {
                         match self.bus.read_memory(str_base + offset) as char {
                             '$' => break,
                             ch => output.push(ch),
-                        };
-                        offset += 1;
-                        if offset > BDOS_MAX_STRING_SIZE {
-                            panic!("Too long zexall string");
                         }
+                        offset += 1;
+                        assert!(offset <= BDOS_MAX_STRING_SIZE, "Too long zexall string");
                     }
                 }
                 _ => {}
@@ -93,9 +90,10 @@ impl ZexallTester {
             self.cpu.emulate(&mut self.bus);
         }
 
-        if !output.ends_with(ZEXALL_SUCCESS_MESSAGE_SUFFIX) {
-            panic!("ERROR. Test output: {}", output);
-        }
+        assert!(
+            output.ends_with(ZEXALL_SUCCESS_MESSAGE_SUFFIX),
+            "ERROR. Test output: {output}"
+        );
     }
 }
 
@@ -103,7 +101,7 @@ macro_rules! zexall_tests_internal {
     [$idx:expr] => {};
     [$idx:expr, $name:ident] => {
         paste::paste! {
-            #[ignore]
+            #[ignore = "slow: runs a zexall section; use --include-ignored"]
             #[test]
             pub fn [<zexall_ $name>]() {
                 ZexallTester::new($idx).execute();

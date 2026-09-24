@@ -112,7 +112,10 @@ fn restored_halt_is_left_by_interrupt() {
 /// that counts in C, until `clocks` have passed. Returns the processor, the memory near the
 /// stack, the clocks passed, and how many interrupts `step` reported.
 fn run_counting(clocks: usize, split: bool) -> (Z80, Vec<u8>, usize, usize) {
-    let (mut cpu, mut bus) = machine(&[EI, INC_B, HALT, JR_E, (-5i8) as u8], &[INC_C, EI, RET]);
+    let (mut cpu, mut bus) = machine(
+        &[EI, INC_B, HALT, JR_E, (-5i8).cast_unsigned()],
+        &[INC_C, EI, RET],
+    );
     let mut interrupts = 0;
     loop {
         bus.set_interrupt(bus.clocks() % 1000 < 32);
@@ -146,7 +149,10 @@ fn step_runs_program_as_emulate_does() {
         (by_step.regs.get_sp(), by_emulate.regs.get_sp()),
         (by_step.regs.get_bc(), by_emulate.regs.get_bc()),
         (by_step.regs.get_af(), by_emulate.regs.get_af()),
-        (by_step.regs.get_r() as u16, by_emulate.regs.get_r() as u16),
+        (
+            u16::from(by_step.regs.get_r()),
+            u16::from(by_emulate.regs.get_r()),
+        ),
     ] {
         assert_eq!(a, b);
     }
