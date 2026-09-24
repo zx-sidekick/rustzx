@@ -101,7 +101,7 @@ Pin a commit rather than the branch, so a rebase here cannot change a build. Thi
 
 ## How it is checked
 
-`.github/workflows/test-rustzx-z80.yml` runs these on every push to `zx-sidekick` and every pull request that touches the processor: format, clippy, the unit tests, zexall in two batches, and the z80test suites. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs on `master`.
+`.github/workflows/test-rustzx-z80.yml` runs these on every pull request, and on every push to `zx-sidekick` that touches the processor: format, clippy, the unit tests, zexall in two batches, and the z80test suites. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs on `master`. `zx-sidekick` requires all five jobs to pass, on a branch up to date with it, before a pull request can be merged.
 
 ```
 cargo clippy -p rustzx-z80 --all-targets
