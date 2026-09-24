@@ -67,8 +67,25 @@ fn run(name: &str, program: &[u8], steps: usize) -> f64 {
         cpu.emulate(&mut bus);
     }
     let secs = start.elapsed().as_secs_f64();
-    // A checksum of memory and time, so two builds can be seen to have done the same work
-    let checksum = bus.mem.iter().map(|&b| u64::from(b)).sum::<u64>() + bus.clocks as u64;
+    // A checksum of the registers, memory and time, so two builds can be seen to have done the
+    // same work: FNV-1a over every byte of memory, then the registers and the clock
+    let r = &cpu.regs;
+    let mut checksum: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bus.mem.iter().copied().chain(
+        [
+            r.get_af(),
+            r.get_bc(),
+            r.get_de(),
+            r.get_hl(),
+            r.get_sp(),
+            r.get_pc(),
+        ]
+        .into_iter()
+        .flat_map(u16::to_le_bytes),
+    ) {
+        checksum = (checksum ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+    }
+    checksum ^= bus.clocks as u64;
     println!("{name}: {secs:.3}s (checksum {checksum:x})");
     secs
 }
@@ -85,7 +102,7 @@ fn main() {
     // ADD HL,BC; DJNZ; JR back
     let mix = [
         0x21, 0x00, 0x40, 0x06, 0x00, 0x7E, 0x86, 0x77, 0x23, 0xC5, 0xC1, 0x09, 0x10, 0xF7, 0x18,
-        0xEF,
+        0xF0,
     ];
     let mut best = [f64::MAX; 2];
     for _ in 0..3 {
