@@ -36,6 +36,70 @@ pub enum Step {
     Instruction,
 }
 
+/// A set of addresses to stop at, for [`Z80::run_until`]: one bit for each of the 65,536.
+#[derive(Clone)]
+pub struct Breakpoints {
+    bits: [u64; 1024],
+}
+
+impl Default for Breakpoints {
+    fn default() -> Self {
+        Self { bits: [0; 1024] }
+    }
+}
+
+impl Breakpoints {
+    /// An empty set.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds `addr`.
+    pub fn insert(&mut self, addr: u16) {
+        self.bits[usize::from(addr >> 6)] |= 1 << (addr & 63);
+    }
+
+    /// Removes `addr`.
+    pub fn remove(&mut self, addr: u16) {
+        self.bits[usize::from(addr >> 6)] &= !(1 << (addr & 63));
+    }
+
+    /// Whether `addr` is in the set.
+    #[must_use]
+    #[inline]
+    pub fn contains(&self, addr: u16) -> bool {
+        self.bits[usize::from(addr >> 6)] & (1 << (addr & 63)) != 0
+    }
+
+    /// Removes every address.
+    pub fn clear(&mut self) {
+        self.bits = [0; 1024];
+    }
+}
+
+impl FromIterator<u16> for Breakpoints {
+    fn from_iter<I: IntoIterator<Item = u16>>(addrs: I) -> Self {
+        let mut set = Self::new();
+        for addr in addrs {
+            set.insert(addr);
+        }
+        set
+    }
+}
+
+/// Why [`Z80::run_until`] stopped
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stop {
+    /// The limit was reached; nothing ran after it was.
+    Limit,
+    /// An instruction left the program counter on this address, one of the breakpoints. It is
+    /// the next instruction to run.
+    Breakpoint(u16),
+    /// An interrupt was taken: the program counter is at its handler, none of which has run.
+    Interrupt,
+}
+
 /// The NMI input, which is edge-triggered: the line going active latches one NMI, however long it
 /// then stays active, and the NMI waits in the latch until it can be taken.
 ///
@@ -328,9 +392,10 @@ impl Z80 {
     ///
     /// Either takes a pending interrupt, if one is due, or runs one instruction; never both.
     /// Calling `step` repeatedly runs a program as calling [`Z80::emulate`] repeatedly does, with
-    /// the same timing. The difference is that after an interrupt the program counter is at the handler before any
-    /// of it has run. That is where a caller can see that an interrupt happened, keep the state
-    /// from just before its handler, or stop at a breakpoint on the handler's first instruction.
+    /// the same timing. The difference is that after an interrupt the program counter is at the
+    /// handler before any of it has run. That is where a caller can see that an interrupt
+    /// happened, keep the state from just before its handler, or stop at a breakpoint on the
+    /// handler's first instruction.
     ///
     /// After an interrupt, [`Z80Bus::pc_callback`] is called with the handler's address, as it
     /// is after an instruction.
@@ -341,6 +406,48 @@ impl Z80 {
         } else {
             self.execute_instruction(bus);
             Step::Instruction
+        }
+    }
+
+    /// Runs [`Z80::step`] until `limit` says so, an instruction leaves the program counter on a
+    /// breakpoint, or an interrupt is taken; says which.
+    ///
+    /// It is the loop a caller would write around `step`, run inside the crate so it compiles to
+    /// one tight loop:
+    ///
+    /// ```text
+    /// loop {
+    ///     if limit(bus) { return Stop::Limit }
+    ///     match step(bus) {
+    ///         Step::Interrupt => return Stop::Interrupt,
+    ///         Step::Instruction if breakpoints.contains(pc) => return Stop::Breakpoint(pc),
+    ///         Step::Instruction => {}
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// `limit` is asked before each step; it usually compares the bus's clock with an end time,
+    /// since only the bus knows how many T-states have passed (`|bus| bus.clocks() >= end`).
+    /// Breakpoints are checked after each instruction, not before the first, so calling
+    /// `run_until` again after it stopped at one carries on from there. [`Z80Bus::pc_callback`]
+    /// is still called after every step.
+    pub fn run_until<B: Z80Bus>(
+        &mut self,
+        bus: &mut B,
+        breakpoints: &Breakpoints,
+        mut limit: impl FnMut(&B) -> bool,
+    ) -> Stop {
+        loop {
+            if limit(bus) {
+                return Stop::Limit;
+            }
+            if self.step(bus) == Step::Interrupt {
+                return Stop::Interrupt;
+            }
+            let pc = self.regs.get_pc();
+            if breakpoints.contains(pc) {
+                return Stop::Breakpoint(pc);
+            }
         }
     }
 

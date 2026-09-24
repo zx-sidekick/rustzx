@@ -99,6 +99,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** Direct crate-internal accessors for HL, DE, BC and B, used where those registers are named, and `#[inline]` on the generic accessors. No behaviour change: the tests, zexall, z80test and SingleStepTests give the same results. `examples/speed.rs` measures it; with code alignment held fixed, a block copy runs about 2× as fast and a mix of other instructions about 2% faster.
 
+### 9. `Z80::run_until`: the step loop, with breakpoints and a limit
+
+**Problem.** ZX Sidekick runs a frame by calling `step` in a loop, checking the program counter against the addresses it acts at, and stopping at the frame's end.
+
+**Change.** `Z80::run_until(bus, &breakpoints, limit) -> Stop` runs that loop: before each step it asks `limit` (a closure over the bus, since only the bus knows how many T-states have passed), and it stops when an instruction leaves the program counter on an address in `breakpoints` (a `Breakpoints` set, a bit for each of the 65,536 addresses) or when an interrupt is taken. `Stop` says which. Tested in `tests/integration/run_until.rs`, including stop-for-stop agreement with the same loop written around `step`. It's no faster than that loop (`step` is generic over the bus, so it's already compiled into the caller); what it adds is saying the loop once.
+
 ### 10. `Z80::push`, `pop` and `ret`: stack operations for callers
 
 **Problem.** ZX Sidekick answers ROM routines itself and steers games between instructions, which means pushing, popping and returning from outside the processor. It kept its own copies of those stack operations.
