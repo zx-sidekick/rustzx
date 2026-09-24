@@ -2,6 +2,7 @@
 
 //! Module which contains all CPU-specific structures, functions, constants
 
+pub mod alu;
 mod bus;
 mod codegen;
 mod cpu;
