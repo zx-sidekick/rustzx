@@ -81,7 +81,7 @@ cargo test --release -p rustzx-z80 -- --include-ignored
 cargo test --release -p rustzx-test -- --ignored z80full z80ccf z80memptr
 ```
 
-On the `zx-sidekick` branch, on 14 September 2026: 74 tests in `rustzx-z80` pass, including all of zexall and the 7 new tests, and the three z80test suites pass. ZX Sidekick's Fuse corpus harness gives the same result on this crate as on 0.16.0: 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335.
+On the `zx-sidekick` branch, on 24 September 2026: 121 tests in `rustzx-z80` pass, including all of zexall and the 54 tests of the patches' behaviour, and the three z80test suites pass. `tests/integration/emulate.rs` uses only upstream's interface and passes unchanged on `master` too, which shows `emulate()` behaves as upstream's does. ZX Sidekick's Fuse corpus harness gives the same result on this crate as on 0.16.0: 1,329 of 1,335 cases match exactly (the other 6 differ only in the undocumented bits 3 and 5 of F), and bus activity matches in all 1,335.
 
 ## Keeping up with upstream
 
