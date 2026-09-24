@@ -15,7 +15,7 @@ ZX Sidekick runs original ZX Spectrum games, from the player's own copy, in an e
 2. An interrupt could not be seen before its handler had started to run.
 3. The halted and just-after-`EI` state could not be read or restored.
 
-Each fix is small, keeps the existing API and behaviour, and is written so it can be offered upstream. Patches 4 and 5 came later, from a review of the whole crate: 4 keeps behaviour, and 5 changes it on purpose, where the crate did not do what the Z80 does. Upstream is quiet: the last release is 0.16.0 (31 March 2023), the last change to `rustzx-z80` on `master` was in July 2024, and pull requests have been open since 2023. So the patches are carried here rather than waited for.
+Each fix is small, keeps the existing API and behaviour, and is written so it can be offered upstream. Patches 4 and 5 came later, from a review of the whole crate: 4 keeps behaviour, and 5 changes it on purpose, where the crate did not do what the Z80 does. The patches after them add what ZX Sidekick needed next. Upstream is quiet: the last release is 0.16.0 (31 March 2023), the last change to `rustzx-z80` on `master` was in July 2024, and pull requests have been open since 2023. So the patches are carried here rather than waited for.
 
 ## The patches
 
@@ -132,7 +132,7 @@ git switch zx-sidekick
 git rebase upstream/master
 ```
 
-A patch upstream has taken is dropped in the rebase. If upstream releases them all, ZX Sidekick goes back to the published crate and this repository has no reason to exist.
+A patch upstream has taken is dropped in the rebase. If upstream releases every patch here, ZX Sidekick goes back to the published crate and this repository has no reason to exist.
 
 ## Licence
 

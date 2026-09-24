@@ -1,4 +1,4 @@
-//! Behaviour ZX Sidekick's rustzx-z80 corrects from upstream, each pinned to what the hardware does.
+//! What ZX Sidekick's rustzx-z80 corrects from upstream, each pinned to what the hardware does.
 //!
 //! Unlike `emulate.rs`, these do not pass on upstream `master`.
 
