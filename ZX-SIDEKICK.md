@@ -101,6 +101,8 @@ Pin a commit rather than the branch, so a rebase here cannot change a build. Thi
 
 ## How it is checked
 
+`.github/workflows/test-rustzx-z80.yml` runs these on every push to `zx-sidekick` and every pull request that touches the processor: format, clippy, the unit tests, zexall in two batches, and the z80test suites. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs on `master`.
+
 ```
 cargo clippy -p rustzx-z80 --all-targets
 cargo test --release -p rustzx-z80 -- --include-ignored
