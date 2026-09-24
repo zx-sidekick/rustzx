@@ -484,8 +484,8 @@ fn long_run_end_state() {
     bus.set_interrupt_data(0xFF);
     bus.load_to_memory(&[0x00, 0xA0], 0x90FF);
     bus.load_to_memory(&[INC_C, EI, RET], 0xA000);
-    // INC E; EI; RETN. The EI means RETN leaves IFF1 as it is, which upstream and this fork
-    // treat alike (see corrections.rs for RETN changing IFF1).
+    // INC E; EI; RETN. The EI means RETN leaves IFF1 as it is, which upstream's rustzx-z80 and
+    // ZX Sidekick's treat alike (see corrections.rs for RETN changing IFF1).
     bus.load_to_memory(&[0x1C, EI, PREFIX_ED, RETN], NMI_HANDLER);
     let mut nmi_taken = false;
     while bus.clocks() < 100_000 {
