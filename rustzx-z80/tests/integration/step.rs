@@ -237,9 +237,11 @@ fn chained_ei_defers_interrupt_step() {
     check_deferred(&[EI, EI, EI, NOP], 3, Line::Int);
 }
 
+/// `EI` and `DI` hold off only the maskable interrupt; an NMI is taken straight after them.
 #[test]
-fn di_defers_nmi_step() {
-    check_deferred(&[DI, NOP, NOP], 1, Line::Nmi);
+fn ei_and_di_do_not_defer_nmi_step() {
+    check_deferred(&[DI, NOP, NOP], 0, Line::Nmi);
+    check_deferred(&[EI, NOP, NOP], 0, Line::Nmi);
 }
 
 #[test]
@@ -348,7 +350,7 @@ impl Lcg {
 enum Schedule {
     /// INT held for 32 clocks every `period`.
     Periodic { period: usize },
-    /// INT at random, and NMI pulses at random, released once taken.
+    /// INT at random, and NMI in one-call pulses at random, which the processor latches.
     Random { seed: u32 },
 }
 
@@ -356,7 +358,6 @@ enum Schedule {
 struct Run {
     cpu: Z80,
     bus: TestingBus,
-    nmi_pending: bool,
     rng: Lcg,
 }
 
@@ -371,10 +372,7 @@ impl Run {
             Schedule::Random { .. } => {
                 let n = self.rng.next();
                 self.bus.set_interrupt(n.is_multiple_of(7));
-                if n.is_multiple_of(97) {
-                    self.nmi_pending = true;
-                }
-                self.bus.set_nmi(self.nmi_pending);
+                self.bus.set_nmi(n.is_multiple_of(97));
             }
         }
     }
@@ -391,32 +389,23 @@ fn check_same_run(im: u8, program: &[u8], handler: &[u8], schedule: Schedule, cl
     let mut by_emulate = Run {
         cpu: cpu.clone(),
         bus: bus.clone(),
-        nmi_pending: false,
         rng: Lcg(seed),
     };
     let mut by_step = Run {
         cpu,
         bus,
-        nmi_pending: false,
         rng: Lcg(seed),
     };
     let handlers = [IM1_HANDLER, IM2_HANDLER, NMI_HANDLER];
     let mut interrupts = 0;
+    let mut nmis = 0;
     let mut calls = 0;
 
     while by_emulate.bus.clocks() < clocks {
         calls += 1;
 
         by_emulate.drive(schedule);
-        let sp = by_emulate.cpu.regs.get_sp();
         by_emulate.cpu.emulate(&mut by_emulate.bus);
-        // The only way to the handler's second instruction with the stack one entry deeper is an
-        // NMI taken in this call, and its first instruction run.
-        if by_emulate.cpu.regs.get_pc() == NMI_HANDLER + 1
-            && by_emulate.cpu.regs.get_sp() == sp.wrapping_sub(2)
-        {
-            by_emulate.nmi_pending = false;
-        }
 
         by_step.drive(schedule);
         let mut step_events = Vec::new();
@@ -428,8 +417,7 @@ fn check_same_run(im: u8, program: &[u8], handler: &[u8], schedule: Schedule, cl
                 "step {calls}: interrupt to {at:#06x}"
             );
             if at == NMI_HANDLER {
-                by_step.nmi_pending = false;
-                by_step.bus.set_nmi(false);
+                nmis += 1;
             }
             step_events.extend(by_step.bus.take_events());
             assert_eq!(step_events.pop(), Some(Event::Pc(at)));
@@ -453,17 +441,19 @@ fn check_same_run(im: u8, program: &[u8], handler: &[u8], schedule: Schedule, cl
             by_emulate.bus.take_waits(),
             "call {calls}"
         );
-        assert_eq!(by_step.nmi_pending, by_emulate.nmi_pending, "call {calls}");
     }
     assert!(
         by_step.bus.memory() == by_emulate.bus.memory(),
         "memory differs"
     );
     assert!(interrupts > 10, "only {interrupts} interrupts");
+    if let Schedule::Random { .. } = schedule {
+        assert!(nmis > 5, "only {nmis} NMIs");
+    }
 }
 
 /// Counts in B and halts; interrupts count in C.
-const COUNTING: [u8; 5] = [EI, INC_B, HALT, JR_E, (-5i8) as u8];
+const COUNTING: [u8; 5] = [EI, INC_B, HALT, JR_E, (-5i8).cast_unsigned()];
 const COUNTING_HANDLER: [u8; 3] = [INC_C, EI, RET];
 
 /// Toggles interrupts, runs prefix chains, and never halts; interrupts count in E and return
@@ -490,7 +480,7 @@ const BUSY: [u8; 22] = [
     0x23, // INC IX
     0x37, // SCF
     JR_E,
-    (-22i8) as u8,
+    (-22i8).cast_unsigned(),
 ];
 const BUSY_HANDLER: [u8; 4] = [INC_E, 0xFB, PREFIX_ED, RETN]; // INC E; EI; RETN
 

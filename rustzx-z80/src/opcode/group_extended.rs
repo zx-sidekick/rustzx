@@ -14,6 +14,10 @@ use crate::{
 
 /// Extended instruction group (ED-prefixed)
 /// (assorted operations)
+#[expect(
+    clippy::too_many_lines,
+    reason = "one match arm per opcode group, following the decoding table"
+)]
 pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
     match opcode.x {
         U2::N0 | U2::N3 => {
@@ -33,7 +37,7 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                     let data = bus.read_io(cpu.regs.get_bc());
                     if let Some(reg) = reg {
                         cpu.regs.set_reg_8(reg, data);
-                    };
+                    }
                     let flags = cpu.regs.get_flags() & FLAG_CARRY | SZPF3F5_TABLE[data as usize];
                     cpu.regs.set_flags(flags);
                 }
@@ -59,9 +63,9 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         // SBC HL, rp[p]
                         U1::N0 => {
                             cpu.regs.set_mem_ptr(cpu.regs.get_hl().wrapping_add(1));
-                            let result = (hl as u32)
-                                .wrapping_sub(operand as u32)
-                                .wrapping_sub(with_carry as u32);
+                            let result = u32::from(hl)
+                                .wrapping_sub(u32::from(operand))
+                                .wrapping_sub(u32::from(with_carry));
                             let lookup = lookup16_r12(hl, operand, result as u16);
                             flags |= OVERFLOW_SUB_TABLE[(lookup >> 4) as usize];
                             flags |= HALF_CARRY_SUB_TABLE[(lookup & 0x07) as usize];
@@ -71,19 +75,19 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         // ADC HL, rp[p]
                         U1::N1 => {
                             cpu.regs.set_mem_ptr(cpu.regs.get_hl().wrapping_add(1));
-                            let result = (hl as u32)
-                                .wrapping_add(operand as u32)
-                                .wrapping_add(with_carry as u32);
+                            let result = u32::from(hl)
+                                .wrapping_add(u32::from(operand))
+                                .wrapping_add(u32::from(with_carry));
                             let lookup = lookup16_r12(hl, operand, result as u16);
                             flags |= OVERFLOW_ADD_TABLE[(lookup >> 4) as usize];
                             flags |= HALF_CARRY_ADD_TABLE[(lookup & 0x07) as usize];
                             result
                         }
                     };
-                    flags |= (result > 0xFFFF) as u8 * FLAG_CARRY;
+                    flags |= u8::from(result > 0xFFFF) * FLAG_CARRY;
                     flags |= SZF3F5_TABLE[((result >> 8) as u8) as usize];
                     flags &= !FLAG_ZERO;
-                    flags |= ((result as u16) == 0) as u8 * FLAG_ZERO;
+                    flags |= u8::from((result as u16) == 0) * FLAG_ZERO;
                     cpu.regs.set_flags(flags);
                     cpu.regs.set_hl(result as u16);
                     // Clocks 4 + 4 + 7 = 15
@@ -114,14 +118,19 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                     flags |= SZF3F5_TABLE[result as usize];
                     let lookup = lookup8_r12(0, acc, result);
                     flags |= HALF_CARRY_SUB_TABLE[(lookup & 0x07) as usize];
-                    flags |= (acc == 0x80) as u8 * FLAG_PV;
-                    flags |= (acc != 0x00) as u8 * FLAG_CARRY;
+                    flags |= u8::from(acc == 0x80) * FLAG_PV;
+                    flags |= u8::from(acc != 0x00) * FLAG_CARRY;
                     cpu.regs.set_flags(flags);
                 }
                 // RETN, RETI
                 U3::N5 => {
                     // RETN and even RETI should copy iff2 into iff1
                     let iff2 = cpu.regs.get_iff2();
+                    // The copy takes effect during the next opcode fetch, so when it changes IFF1
+                    // (only after an NMI) a maskable interrupt is not taken straight after
+                    if cpu.regs.get_iff1() != iff2 {
+                        cpu.skip_interrupt = true;
+                    }
                     cpu.regs.set_iff1(iff2);
                     execute_pop_16(cpu, bus, RegName16::PC, 3);
                     cpu.regs.set_mem_ptr(cpu.regs.get_pc());
@@ -160,8 +169,9 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                             cpu.regs.set_acc(i);
                             let mut flags = cpu.regs.get_flags() & FLAG_CARRY;
                             flags |= SZF3F5_TABLE[i as usize];
-                            flags |= iff2 as u8 * FLAG_PV;
+                            flags |= u8::from(iff2) * FLAG_PV;
                             cpu.regs.set_flags(flags);
+                            cpu.iff2_read = true;
                         }
                         // LD A, R
                         U3::N3 => {
@@ -171,8 +181,9 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                             cpu.regs.set_acc(r);
                             let mut flags = cpu.regs.get_flags() & FLAG_CARRY;
                             flags |= SZF3F5_TABLE[r as usize];
-                            flags |= iff2 as u8 * FLAG_PV;
+                            flags |= u8::from(iff2) * FLAG_PV;
                             cpu.regs.set_flags(flags);
+                            cpu.iff2_read = true;
                         }
                         // RRD
                         U3::N4 => {
@@ -244,7 +255,7 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_mem_cycle();
-                            };
+                            }
                         }
                         // LDDR
                         U3::N7 => {
@@ -256,7 +267,7 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_mem_cycle();
-                            };
+                            }
                         }
                         // NOP
                         _ => {
@@ -278,25 +289,25 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         // CPIR
                         U3::N6 => {
                             let result = execute_cpi_cpd(cpu, bus, BlockDir::Inc);
-                            if (cpu.regs.get_reg_16(RegName16::BC) != 0) & (!result) {
+                            if (cpu.regs.get_reg_16(RegName16::BC) != 0) && (!result) {
                                 cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 // last HL
                                 bus.wait_loop(cpu.regs.get_hl().wrapping_sub(1), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_mem_cycle();
-                            };
+                            }
                         }
                         // CPDR
                         U3::N7 => {
                             let result = execute_cpi_cpd(cpu, bus, BlockDir::Dec);
-                            if (cpu.regs.get_reg_16(RegName16::BC) != 0) & (!result) {
+                            if (cpu.regs.get_reg_16(RegName16::BC) != 0) && (!result) {
                                 cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_hl().wrapping_add(1), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_mem_cycle();
-                            };
+                            }
                         }
                         // NOP
                         _ => {
@@ -319,21 +330,25 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         U3::N6 => {
                             let m = execute_ini_ind(cpu, bus, BlockDir::Inc);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_hl().wrapping_sub(1), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_io_cycle(BlockIoOpcode::Inir, m);
-                            };
+                            }
                         }
                         // INDR
                         U3::N7 => {
                             let m = execute_ini_ind(cpu, bus, BlockDir::Dec);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_hl().wrapping_add(1), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_io_cycle(BlockIoOpcode::Indr, m);
-                            };
+                            }
                         }
                         // NOP
                         _ => {
@@ -356,21 +371,25 @@ pub fn execute_extended(cpu: &mut Z80, bus: &mut impl Z80Bus, opcode: Opcode) {
                         U3::N6 => {
                             let m = execute_outi_outd(cpu, bus, BlockDir::Inc);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_bc(), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_io_cycle(BlockIoOpcode::Otir, m);
-                            };
+                            }
                         }
                         // OTDR
                         U3::N7 => {
                             let m = execute_outi_outd(cpu, bus, BlockDir::Dec);
                             if cpu.regs.get_reg_8(RegName8::B) != 0 {
+                                // Like LDIR, the repeat sets MEMPTR to the instruction's address + 1
+                                cpu.regs.set_mem_ptr(cpu.regs.get_pc().wrapping_sub(1));
                                 bus.wait_loop(cpu.regs.get_bc(), 5);
                                 cpu.regs.dec_pc();
                                 cpu.regs.dec_pc();
                                 cpu.regs.update_flags_block_io_cycle(BlockIoOpcode::Otdr, m);
-                            };
+                            }
                         }
                         // NOP
                         _ => {

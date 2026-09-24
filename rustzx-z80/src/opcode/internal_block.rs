@@ -23,10 +23,10 @@ pub fn execute_ldi_ldd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) {
     }
     let mut flags = cpu.regs.get_flags();
     flags &= !(FLAG_SUB | FLAG_HALF_CARRY | FLAG_PV | FLAG_F3 | FLAG_F5);
-    flags |= (bc != 0) as u8 * FLAG_PV;
+    flags |= u8::from(bc != 0) * FLAG_PV;
     let src_plus_a = src.wrapping_add(cpu.regs.get_acc());
-    flags |= (src_plus_a & 0x08 != 0) as u8 * FLAG_F3;
-    flags |= (src_plus_a & 0x02 != 0) as u8 * FLAG_F5;
+    flags |= u8::from(src_plus_a & 0x08 != 0) * FLAG_F3;
+    flags |= u8::from(src_plus_a & 0x02 != 0) * FLAG_F5;
     cpu.regs.set_flags(flags);
     // Clocks: <4 + 4> + 3 + 3 + 2 = 16
 }
@@ -44,14 +44,14 @@ pub fn execute_cpi_cpd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> b
             cpu.regs.dec_reg_16(RegName16::HL);
             cpu.regs.set_mem_ptr(cpu.regs.get_mem_ptr().wrapping_sub(1));
         }
-    };
+    }
     let bc = cpu.regs.dec_reg_16(RegName16::BC);
     let acc = cpu.regs.get_acc();
     let tmp = acc.wrapping_sub(src);
     let mut flags = cpu.regs.get_flags() & FLAG_CARRY;
     flags |= FLAG_SUB;
-    flags |= (bc != 0) as u8 * FLAG_PV;
-    flags |= (tmp == 0) as u8 * FLAG_ZERO;
+    flags |= u8::from(bc != 0) * FLAG_PV;
+    flags |= u8::from(tmp == 0) * FLAG_ZERO;
     flags |= tmp & FLAG_SIGN;
     let lookup = lookup8_r12(acc, src, tmp);
     let half_borrow = HALF_CARRY_SUB_TABLE[(lookup & 0x07) as usize];
@@ -61,8 +61,8 @@ pub fn execute_cpi_cpd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> b
     } else {
         tmp
     };
-    flags |= ((tmp2 & 0x08) != 0) as u8 * FLAG_F3;
-    flags |= ((tmp2 & 0x02) != 0) as u8 * FLAG_F5;
+    flags |= u8::from((tmp2 & 0x08) != 0) * FLAG_F3;
+    flags |= u8::from((tmp2 & 0x02) != 0) * FLAG_F5;
     cpu.regs.set_flags(flags);
     // Clocks: <4 + 4> + 3 + 5 = 16
     tmp == 0
@@ -84,18 +84,18 @@ pub fn execute_ini_ind(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) -> u
             cpu.regs.dec_reg_16(RegName16::HL);
             cpu.regs.set_mem_ptr(cpu.regs.get_bc().wrapping_sub(1));
         }
-    };
+    }
     let b = cpu.regs.dec_reg_8(RegName8::B);
     let mut flags = 0u8;
     flags |= SZF3F5_TABLE[b as usize];
-    flags |= ((src & 0x80) != 0) as u8 * FLAG_SUB;
+    flags |= u8::from((src & 0x80) != 0) * FLAG_SUB;
     let c = match dir {
         BlockDir::Inc => cpu.regs.get_reg_8(RegName8::C).wrapping_add(1),
         BlockDir::Dec => cpu.regs.get_reg_8(RegName8::C).wrapping_sub(1),
     };
     // (HL) + ( C (+ or -) 1) & 0xFF
     let (k, k_carry) = c.overflowing_add(src);
-    flags |= k_carry as u8 * (FLAG_CARRY | FLAG_HALF_CARRY);
+    flags |= u8::from(k_carry) * (FLAG_CARRY | FLAG_HALF_CARRY);
     // Parity of (k & 7) xor B is PV flag
     flags |= PARITY_TABLE[((k & 0x07) ^ b) as usize];
     cpu.regs.set_flags(flags);
@@ -119,17 +119,17 @@ pub fn execute_outi_outd(cpu: &mut Z80, bus: &mut impl Z80Bus, dir: BlockDir) ->
             cpu.regs.dec_reg_16(RegName16::HL);
             cpu.regs.set_mem_ptr(cpu.regs.get_bc().wrapping_sub(1));
         }
-    };
+    }
 
     bus.write_io(cpu.regs.get_bc(), src);
 
     let l = cpu.regs.get_l();
     let mut flags = 0u8;
     flags |= SZF3F5_TABLE[b as usize];
-    flags |= ((src & 0x80) != 0) as u8 * FLAG_SUB;
+    flags |= u8::from((src & 0x80) != 0) * FLAG_SUB;
     // L + (HL)
     let (k, k_carry) = l.overflowing_add(src);
-    flags |= k_carry as u8 * (FLAG_CARRY | FLAG_HALF_CARRY);
+    flags |= u8::from(k_carry) * (FLAG_CARRY | FLAG_HALF_CARRY);
     // Parity of (k & 7) xor B is PV flag
     flags |= PARITY_TABLE[((k & 0x07) ^ b) as usize];
     cpu.regs.set_flags(flags);

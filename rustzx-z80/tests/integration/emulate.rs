@@ -6,7 +6,6 @@
 use crate::{snapshot, Event, TestingBus, Wait};
 use rustzx_z80::Z80;
 
-const DI: u8 = 0xF3;
 const EI: u8 = 0xFB;
 const HALT: u8 = 0x76;
 const NOP: u8 = 0x00;
@@ -204,19 +203,6 @@ fn chained_ei_keeps_deferring() {
     assert_eq!(cpu.regs.get_pc(), PROGRAM + 4);
     cpu.emulate(&mut bus);
     assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 4);
-}
-
-#[test]
-fn di_defers_nmi_one_instruction() {
-    let (mut cpu, mut bus) = machine(1, &[DI, NOP, NOP]);
-
-    cpu.emulate(&mut bus);
-    bus.set_nmi(true);
-    cpu.emulate(&mut bus);
-    assert_eq!(cpu.regs.get_pc(), PROGRAM + 2);
-    cpu.emulate(&mut bus);
-    assert_eq!(cpu.regs.get_pc(), NMI_HANDLER + 1);
-    assert_eq!(return_address(&cpu, &mut bus), PROGRAM + 2);
 }
 
 fn prefix_chain_defers_interrupt(first: u8, second: u8) -> Z80 {
@@ -487,18 +473,20 @@ fn prefix_chain_waits() {
 }
 
 /// A program that counts in B and halts, interrupted in IM 2 every 1000 clocks by a handler that
-/// counts in C, and once by an NMI whose handler counts in E. Pins the end state after 100_000
+/// counts in C, and once by an NMI whose handler counts in E. Pins the end state after `100_000`
 /// clocks, so any change to how `emulate` runs, times or interrupts a program shows here.
 #[test]
 fn long_run_end_state() {
-    let (mut cpu, mut bus) = machine(2, &[EI, INC_B, HALT, JR_E, (-5i8) as u8]);
+    let (mut cpu, mut bus) = machine(2, &[EI, INC_B, HALT, JR_E, (-5i8).cast_unsigned()]);
     cpu.regs.set_iff1(false);
     cpu.regs.set_iff2(false);
     cpu.regs.set_i(0x90);
     bus.set_interrupt_data(0xFF);
     bus.load_to_memory(&[0x00, 0xA0], 0x90FF);
     bus.load_to_memory(&[INC_C, EI, RET], 0xA000);
-    bus.load_to_memory(&[0x1C, PREFIX_ED, RETN], NMI_HANDLER); // INC E; RETN
+    // INC E; EI; RETN. The EI means RETN leaves IFF1 as it is, which upstream and this fork
+    // treat alike (see corrections.rs for RETN changing IFF1).
+    bus.load_to_memory(&[0x1C, EI, PREFIX_ED, RETN], NMI_HANDLER);
     let mut nmi_taken = false;
     while bus.clocks() < 100_000 {
         bus.set_interrupt(bus.clocks() % 1000 < 32);
@@ -536,17 +524,17 @@ fn long_run_end_state() {
     );
 }
 
-const LONG_RUN_CLOCKS: usize = 100_001;
-const LONG_RUN_BC: u16 = 0x6464; // 100 loops, 100 interrupts
+const LONG_RUN_CLOCKS: usize = 100_000;
+const LONG_RUN_BC: u16 = 0x6463; // 100 loops, 99 interrupts
 const LONG_RUN_PC: u16 = PROGRAM + 2;
-const LONG_RUN_R: u8 = 0x52;
+const LONG_RUN_R: u8 = 0x57;
 const LONG_RUN_AF: u16 = 0x0020;
 const LONG_RUN_MEM_PTR: u16 = PROGRAM;
 const LONG_RUN_IFF1_IFF2_HALTED: (bool, bool, bool) = (true, true, true);
 const LONG_RUN_STACK: [u8; 4] = [0x00, 0x00, 0x03, 0x80];
-const LONG_RUN_EVENTS: usize = 47_842;
-const LONG_RUN_WAITS: usize = 25_476;
-const LONG_RUN_WAIT_DIGEST: u64 = 0x1a6e_b03e_5e60_75d3;
+const LONG_RUN_EVENTS: usize = 47_856;
+const LONG_RUN_WAITS: usize = 25_475;
+const LONG_RUN_WAIT_DIGEST: u64 = 0x1000_9fc3_c1e2_9cea;
 
 /// FNV-1a over every wait's kind, address and clocks, so one number stands for the whole
 /// sequence.
@@ -559,9 +547,9 @@ fn wait_digest(waits: &[Wait]) -> u64 {
             Wait::Internal(clk) => (2, 0, clk),
         };
         for byte in [kind, (addr >> 8) as u8, addr as u8, clk as u8] {
-            hash = (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
         }
     }
     hash
 }
-const LONG_RUN_HALTS: usize = 23_571;
+const LONG_RUN_HALTS: usize = 23_579;

@@ -34,7 +34,7 @@ pub trait Z80Bus {
     // Normal write to memory, contention may be applied
     fn write(&mut self, addr: u16, value: u8, clk: usize) {
         self.wait_mreq(addr, clk);
-        self.write_internal(addr, value)
+        self.write_internal(addr, value);
     }
     // Method for reading from io port.
     fn read_io(&mut self, port: u16) -> u8;
@@ -73,7 +73,7 @@ where
     T: Z80Bus,
 {
     fn write_byte(&mut self, addr: u16, byte: u8) {
-        // write, but does not perform any processing (zero clock cycles)
-        self.write(addr, byte, 0);
+        // Not a processor access, so no wait (and no contention on a contended machine)
+        self.write_internal(addr, byte);
     }
 }
