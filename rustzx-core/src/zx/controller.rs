@@ -134,7 +134,11 @@ impl<H: Host> ZXController<H> {
 
         let screen = ZXScreen::new(settings.machine, host_context.frame_buffer_context());
         #[cfg(feature = "precise-border")]
-        let border = ZXBorder::new(settings.machine, host_context.frame_buffer_context());
+        let border = ZXBorder::new(
+            settings.machine,
+            settings.border_size,
+            host_context.frame_buffer_context(),
+        );
 
         #[cfg(feature = "sound")]
         let mixer = Self::create_mixer(settings);

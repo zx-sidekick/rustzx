@@ -118,3 +118,60 @@ fn a_48k_has_three_banks_from_0x4000() {
     assert_eq!(emulator.ram_bank(1).expect("bank 1")[0], 0x3C);
     assert!(emulator.ram_bank(3).is_none());
 }
+
+mod border {
+    use super::*;
+    use rustzx_core::zx::video::BorderSize;
+
+    fn border_settings(size: BorderSize) -> RustzxSettings {
+        RustzxSettings {
+            border_size: size,
+            ..presets::settings_48k_nosound()
+        }
+    }
+
+    #[test]
+    fn the_standard_border_is_320_by_240() {
+        let emulator = booted(border_settings(BorderSize::Standard));
+        assert_eq!(emulator.border_buffer().pixels.len(), 320 * 240);
+    }
+
+    #[test]
+    fn a_tall_border_is_320_by_256_and_drawn_to_its_last_line() {
+        let mut emulator = booted(border_settings(BorderSize::Tall));
+        assert_eq!(emulator.border_buffer().pixels.len(), 320 * 256);
+        assert_eq!(BorderSize::Tall.canvas_y(), 32);
+        // LD A,2; OUT (254),A; JR $: a red border from here on
+        for (addr, byte) in (0x9000..).zip([0x3E, 0x02, 0xD3, 0xFE, 0x18, 0xFE]) {
+            emulator.write(addr, byte);
+        }
+        emulator.cpu_mut().regs.set_pc(0x9000);
+        frames(&mut emulator, 2);
+        let red = ZXColor::Red as u8;
+        assert!(
+            emulator.border_buffer().pixels.iter().all(|&p| p == red),
+            "every border pixel red, the first and last 32 lines included"
+        );
+    }
+
+    #[test]
+    fn a_tall_border_is_the_standard_one_with_eight_more_lines_each_side() {
+        // DI; loop: OUT (254),A; INC A; JR loop: the border changes every 27 T-states.
+        let program = [0xF3, 0xD3, 0xFE, 0x3C, 0x18, 0xFB];
+        let mut borders = [BorderSize::Standard, BorderSize::Tall].map(|size| {
+            let mut emulator = booted(border_settings(size));
+            for (addr, &byte) in (0x9000..).zip(&program) {
+                emulator.write(addr, byte);
+            }
+            emulator.cpu_mut().regs.set_pc(0x9000);
+            frames(&mut emulator, 3);
+            emulator.border_buffer().pixels.clone()
+        });
+        let tall = borders[1].split_off(8 * 320);
+        let standard = &borders[0];
+        assert!(
+            tall[..240 * 320] == standard[..],
+            "the tall border's lines 8 to 247 are the standard border's 0 to 239"
+        );
+    }
+}

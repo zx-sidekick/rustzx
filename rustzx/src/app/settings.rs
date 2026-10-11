@@ -182,6 +182,7 @@ impl Settings {
             tape_fastload_enabled: !self.disable_fastload,
             kempston_enabled: !self.disable_kempston,
             mouse_enabled: self.enable_mouse,
+            border_size: Default::default(),
             ay_mode: self.ay_mode,
             ay_enabled,
             beeper_enabled: !self.disable_beeper,

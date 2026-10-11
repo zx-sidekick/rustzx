@@ -3,11 +3,12 @@
 use crate::{
     host::{FrameBuffer, FrameBufferSource},
     zx::{
-        constants::{
-            BORDER_COLS, BORDER_ROWS, CLOCKS_PER_COL, PIXELS_PER_CLOCK, SCREEN_HEIGHT, SCREEN_WIDTH,
-        },
+        constants::{BORDER_COLS, CLOCKS_PER_COL, PIXELS_PER_CLOCK, SCREEN_WIDTH},
         machine::ZXMachine,
-        video::colors::{ZXBrightness, ZXColor},
+        video::{
+            colors::{ZXBrightness, ZXColor},
+            BorderSize,
+        },
     },
 };
 
@@ -40,6 +41,7 @@ impl BeamInfo {
 #[derive(Clone)]
 pub struct ZXBorder<FB: FrameBuffer> {
     machine: ZXMachine,
+    size: BorderSize,
     buffer: FB,
     beam_last: BeamInfo,
     border_changed: bool,
@@ -47,12 +49,13 @@ pub struct ZXBorder<FB: FrameBuffer> {
 }
 impl<FB: FrameBuffer> ZXBorder<FB> {
     /// Returns new instance of border device
-    pub fn new(machine: ZXMachine, context: FB::Context) -> Self {
+    pub fn new(machine: ZXMachine, size: BorderSize, context: FB::Context) -> Self {
         ZXBorder {
             machine,
+            size,
             buffer: FB::new(
                 SCREEN_WIDTH,
-                SCREEN_HEIGHT,
+                size.height(),
                 FrameBufferSource::Border,
                 context,
             ),
@@ -70,7 +73,7 @@ impl<FB: FrameBuffer> ZXBorder<FB> {
         // beginning of the first line (first pixel timing minus border lines
         // minus left border columns)
         let clocks_origin = specs.clocks_first_pixel
-            - 8 * BORDER_ROWS * specs.clocks_line
+            - 8 * self.size.rows() * specs.clocks_line
             - BORDER_COLS * CLOCKS_PER_COL
             + specs.clocks_ula_beam_shift;
         // return first pixel pos
@@ -90,7 +93,7 @@ impl<FB: FrameBuffer> ZXBorder<FB> {
             line += 1;
         }
         // if beam out of screen on vertical pos.
-        if line >= SCREEN_HEIGHT {
+        if line >= self.size.height() {
             (0, 0, true)
         } else {
             (line, pixel, false)
@@ -118,7 +121,7 @@ impl<FB: FrameBuffer> ZXBorder<FB> {
         }
         // fill to end of screen if not already filled
         if !self.beam_block {
-            self.fill_to(SCREEN_HEIGHT - 1, SCREEN_WIDTH);
+            self.fill_to(self.size.height() - 1, SCREEN_WIDTH);
         }
         // move beam to begin and reset flags
         self.beam_last.reset();
@@ -134,7 +137,7 @@ impl<FB: FrameBuffer> ZXBorder<FB> {
         if !self.beam_block {
             // if not first pixel then update
             if frame_end {
-                self.fill_to(SCREEN_HEIGHT - 1, SCREEN_WIDTH);
+                self.fill_to(self.size.height() - 1, SCREEN_WIDTH);
                 self.beam_block = true;
             }
             self.fill_to(line, pixel);
