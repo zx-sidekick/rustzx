@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Emulation events
-    #[derive(Default)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     pub struct EmulationEvents: u8 {
         /// Set when tape fast load trigger is detected
         const TAPE_FAST_LOAD_TRIGGER_DETECTED = 0b00000001;
@@ -13,8 +13,6 @@ bitflags! {
 
 impl EmulationEvents {
     pub fn take(&mut self) -> Self {
-        let events = *self;
-        self.bits = 0;
-        events
+        core::mem::take(self)
     }
 }
