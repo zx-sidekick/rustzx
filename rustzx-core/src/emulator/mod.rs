@@ -27,7 +27,7 @@ use crate::{
     Result,
 };
 use core::time::Duration;
-use rustzx_z80::Z80;
+use rustzx_z80::{Z80Bus, Z80};
 
 #[cfg(feature = "sound")]
 use crate::zx::sound::sample::SoundSample;
@@ -236,6 +236,32 @@ impl<H: Host> Emulator<H> {
     /// Reads byte from memory
     pub fn peek(&self, addr: u16) -> u8 {
         self.controller.memory.read(addr)
+    }
+
+    /// Writes a byte as the processor would, between instructions: the ROM is left alone, and a
+    /// write to display memory reaches the picture. No time passes and nothing is contended.
+    pub fn write(&mut self, addr: u16, value: u8) {
+        self.controller.write_internal(addr, value);
+    }
+
+    /// The processor: its registers, `halted`, `skip_interrupt` and interrupt mode
+    pub fn cpu(&self) -> &Z80 {
+        &self.cpu
+    }
+
+    /// The processor, to change between frames
+    pub fn cpu_mut(&mut self) -> &mut Z80 {
+        &mut self.cpu
+    }
+
+    /// A 16K RAM bank, whether paged in or not: 0 to 7 on a 128K, 0 to 2 on a 48K (from
+    /// `0x4000` up). `None` past the last.
+    pub fn ram_bank(&self, bank: u8) -> Option<&[u8]> {
+        let start = usize::from(bank) * crate::zx::memory::PAGE_SIZE;
+        self.controller
+            .memory
+            .ram()
+            .get(start..start + crate::zx::memory::PAGE_SIZE)
     }
 
     pub fn border_color(&self) -> ZXColor {

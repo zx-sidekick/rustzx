@@ -141,6 +141,11 @@ impl ZXMemory {
         &mut self.ram[shift..shift + PAGE_SIZE]
     }
 
+    /// All of the RAM, bank after bank
+    pub fn ram(&self) -> &[u8] {
+        &self.ram
+    }
+
     /// Returns slice to ram page
     pub fn ram_page_data(&self, page: u8) -> &[u8] {
         if (page as usize + 1) * PAGE_SIZE > self.ram.len() {
