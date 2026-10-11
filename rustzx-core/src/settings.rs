@@ -1,4 +1,7 @@
-use crate::{utils::EmulationMode, zx::machine::ZXMachine};
+use crate::{
+    utils::EmulationMode,
+    zx::{machine::ZXMachine, video::BorderSize},
+};
 
 #[cfg(all(feature = "sound", feature = "ay"))]
 use crate::zx::sound::ay::ZXAYMode;
@@ -10,6 +13,8 @@ pub struct RustzxSettings {
     pub tape_fastload_enabled: bool,
     pub kempston_enabled: bool,
     pub mouse_enabled: bool,
+    /// How much border the border frame buffer holds
+    pub border_size: BorderSize,
     #[cfg(all(feature = "sound", feature = "ay"))]
     pub ay_mode: ZXAYMode,
     #[cfg(all(feature = "sound", feature = "ay"))]

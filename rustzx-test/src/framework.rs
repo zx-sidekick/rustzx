@@ -10,6 +10,7 @@ use rustzx_core::{
         machine::ZXMachine,
         sound::ay::ZXAYMode,
         video::colors::{ZXBrightness, ZXColor},
+        video::BorderSize,
     },
     EmulationMode, EmulationStopReason, Emulator, RustzxSettings,
 };
@@ -216,6 +217,7 @@ pub mod presets {
             tape_fastload_enabled: true,
             kempston_enabled: false,
             mouse_enabled: false,
+            border_size: BorderSize::Standard,
             ay_mode: ZXAYMode::ABC,
             ay_enabled: false,
             beeper_enabled: false,

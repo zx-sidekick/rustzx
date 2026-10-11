@@ -143,6 +143,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** `szx::save` writes `CRTR`, `Z80R`, `SPCR`, `AY` (when the AY is on), `KEYB`, `AMXM`, and a `RAMP` block for each RAM page, zlib-compressed with the `zlib` feature: the inverse of the loader, so what it saves loads back as it was. A halted processor's PC is written one back, since the loader moves it past the `HALT`. The loader no longer reads the creator block (it only names the program that wrote it), sets the beeper and border directly, and `ZXAyChip::set_regs` writes each register to the chip. `Regs::get_q` reads Q, for the `FSET` flag. The tape and its position aren't saved. Tested in `rustzx-test/tests/szx_save.rs`: a 48K, a 128K with bank 3 paged in and the AY sounding, and a halted machine each load back with the same memory, registers and interrupt mode, then run 50 frames as the original (the same picture, and sound but for the AY, whose tone and envelope position SZX doesn't hold), and save again to the same bytes.
 
+### 16. A 320×256 border as a setting
+
+**Problem.** The precise border's frame buffer was 320×240 (24 lines above and below the screen). ZX Sidekick shows the Spectrum's 320×256, 32 lines above and below, as its window design does.
+
+**Change.** `RustzxSettings::border_size` takes a `zx::video::BorderSize`: `Standard` (320×240, the default, as before) or `Tall` (320×256). The border's beam timing starts 8 × the size's border rows before the first screen line, so a tall border is the standard one with eight more lines each side. `BorderSize::canvas_y` says where the screen sits in the border buffer. Tested in `rustzx-test/tests/access.rs`: the buffer sizes, a red border reaching a tall border's last line, and, with the border changing every 27 T-states, a tall border's lines 8 to 247 matching a standard border's 0 to 239 pixel for pixel. The tape test's border hashes are unchanged.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:
