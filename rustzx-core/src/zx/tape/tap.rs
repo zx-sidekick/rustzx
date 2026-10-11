@@ -27,6 +27,7 @@ enum TapeState {
     Pause,
 }
 
+#[derive(Clone)]
 pub struct Tap<A: LoadableAsset + SeekableAsset> {
     asset: A,
     state: TapeState,

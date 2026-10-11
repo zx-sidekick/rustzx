@@ -5,7 +5,7 @@ const DECIMATE_FACTOR: usize = 8;
 const FIR_SIZE: usize = 192;
 const DC_FILTER_SIZE: usize = 1024;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct ToneChannel {
     tone_period: u16,
     tone_counter: u16,
@@ -18,12 +18,13 @@ struct ToneChannel {
     pan_right: f64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Interpolator {
     c: [f64; 4],
     y: [f64; 4],
 }
 
+#[derive(Clone)]
 struct DcFilter {
     sum: f64,
     delay: [f64; DC_FILTER_SIZE],
@@ -44,6 +45,7 @@ impl Default for DcFilter {
 /// Link to original repo: https://github.com/true-grue/ayumi
 ///
 /// Uses f64 for computations.
+#[derive(Clone)]
 pub struct AymPrecise {
     channels: [ToneChannel; TONE_CHANNELS],
 

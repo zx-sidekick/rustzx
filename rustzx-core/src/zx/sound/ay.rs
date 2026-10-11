@@ -13,6 +13,7 @@ pub enum ZXAYMode {
     ACB,
 }
 
+#[derive(Clone)]
 pub(crate) struct ZXAyChip {
     ay: AymPrecise,
     current_reg: usize,

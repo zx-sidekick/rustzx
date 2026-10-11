@@ -16,7 +16,7 @@ pub enum KempstonKey {
 }
 
 /// Kempston Joystick
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct KempstonJoy {
     state: u8,
 }

@@ -1,5 +1,6 @@
 use crate::{zx::tape::TapeImpl, Result};
 
+#[derive(Clone)]
 pub struct Empty;
 
 impl TapeImpl for Empty {

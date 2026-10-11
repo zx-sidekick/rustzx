@@ -34,6 +34,7 @@ pub enum Page {
 }
 
 // Memory struct
+#[derive(Clone)]
 pub struct ZXMemory {
     rom: Vec<u8>,
     ram: Vec<u8>,

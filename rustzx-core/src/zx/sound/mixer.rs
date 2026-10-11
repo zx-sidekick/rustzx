@@ -15,6 +15,7 @@ use crate::zx::sound::ay::{ZXAYMode, ZXAyChip};
 use alloc::collections::VecDeque;
 
 /// Main sound mixer.
+#[derive(Clone)]
 pub(crate) struct ZXMixer {
     /// direct access to beeper device
     pub beeper: ZXBeeper,

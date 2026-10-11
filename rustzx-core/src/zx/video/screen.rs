@@ -15,7 +15,7 @@ use crate::{
 use alloc::boxed::Box;
 
 /// Represents how much 8x1 have been already **rendered**.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BlocksCount {
     pub lines: usize,
     pub columns: usize,
@@ -75,12 +75,14 @@ impl BlocksCount {
 }
 
 /// Represents Single memory bank of screen
+#[derive(Clone)]
 struct ScreenBank {
     pub attributes: Box<[ZXAttribute; ATTR_COLS * ATTR_ROWS]>,
     pub bitmap: Box<[u8; ATTR_COLS * CANVAS_HEIGHT]>,
 }
 
 /// Represents ZXSpectrum emulated mid part of screen (canvas)
+#[derive(Clone)]
 pub struct ZXScreen<FB: FrameBuffer> {
     machine: ZXMachine,
     last_blocks: BlocksCount,
