@@ -1,8 +1,10 @@
 # rustzx for ZX Sidekick
 
-This is a fork of [rustzx/rustzx](https://github.com/rustzx/rustzx), kept by the [zx-sidekick](https://github.com/zx-sidekick) organisation for one crate in it: `rustzx-z80`, the Z80 processor.
+This is a fork of [rustzx/rustzx](https://github.com/rustzx/rustzx), kept by the [zx-sidekick](https://github.com/zx-sidekick) organisation for two crates in it: `rustzx-z80`, the Z80 processor, and `rustzx-core`, the Spectrum around it.
 
-ZX Sidekick runs original ZX Spectrum games, from the player's own copy, in an emulated machine the player never sees, and adds guidance around them (a map, what is still missing, and so on). It uses `rustzx-z80` as the processor inside its own bus. Nothing else in this repository is used.
+[ZX Sidekick](https://github.com/zx-sidekick/zx-sidekick) runs original ZX Spectrum games, from the player's own copy, in an emulated Spectrum, and adds training switches, gamepad controls and guidance around them, as each game's definition describes. Its machine is `rustzx-core` with this fork's `rustzx-z80`, and the Spectrum ROMs `rustzx-core` bundles (Amstrad allows emulators to distribute them). It depends on both crates by git, pinned to a commit of this branch. `aym` comes in through `rustzx-core`; the frontend, `rustzx-utils`, `rustzx-test` and `vtx` aren't used.
+
+The patches below were written for an earlier ZX Sidekick, which used only `rustzx-z80`, inside its own bus and without the ROM; their problem statements describe that. Patches to `rustzx-core` follow, for what ZX Sidekick needs of the machine: a frame that can end at a given address, writing memory and registers, cloning the machine, and saving SZX.
 
 - `master` follows upstream unchanged.
 - `zx-sidekick` is `master` plus the patches below. It is the default branch here so this page is what you see first.
@@ -31,7 +33,7 @@ Each fix is small, keeps the existing API and behaviour, and is written so it ca
 
 **Problem.** `emulate()` takes a due interrupt and then runs one instruction, in the same call. So a caller that looks at the program counter between calls never sees it at the interrupt handler: by the time the call returns, the handler's first instruction has already run.
 
-That matters to ZX Sidekick because it runs games without the Spectrum ROM, which is not its to distribute. The few ROM routines a game uses (for Starquake: the interrupt handler, printing a character, and a multiply) are answered in Rust, by checking the program counter before each instruction. The interrupt handler at `0x0038` could not be answered that way.
+That mattered to ZX Sidekick because it then ran games without the Spectrum ROM. The few ROM routines a game uses (for Starquake: the interrupt handler, printing a character, and a multiply) are answered in Rust, by checking the program counter before each instruction. The interrupt handler at `0x0038` could not be answered that way.
 
 **Workaround it replaces.**
 
@@ -113,7 +115,15 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 ## Using it
 
-The crate's name and version are unchanged, so it replaces the published crate for a project that depends on `rustzx-z80 = "0.16"`:
+ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:
+
+```toml
+[workspace.dependencies]
+rustzx-core = { git = "https://github.com/zx-sidekick/rustzx", rev = "<commit>", features = ["embedded-roms", "ay", "zlib"] }
+rustzx-z80 = { git = "https://github.com/zx-sidekick/rustzx", rev = "<commit>" }
+```
+
+The crates' names and versions are unchanged, so for a project that depends on the published `rustzx-z80 = "0.16"`, this fork's replaces it:
 
 ```toml
 [patch.crates-io]
