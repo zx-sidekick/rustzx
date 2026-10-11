@@ -13,6 +13,7 @@ use enum_dispatch::enum_dispatch;
 
 #[allow(clippy::large_enum_variant)]
 #[enum_dispatch(TapeImpl)]
+#[derive(Clone)]
 pub enum ZXTape<A: LoadableAsset + SeekableAsset> {
     Tap(Tap<A>),
     Empty(Empty),

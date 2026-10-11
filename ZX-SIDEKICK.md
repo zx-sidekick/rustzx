@@ -131,6 +131,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** `Emulator::write(addr, value)` writes as the processor does, through the controller's `write_internal`: the ROM is left alone and display memory reaches the picture, with no time passing. `Emulator::cpu()` and `cpu_mut()` lend the `Z80`, whose registers, `halted`, `skip_interrupt` and interrupt mode the earlier patches made public. `Emulator::ram_bank(bank)` reads a 16K RAM bank whether paged in or not, `None` past the last. Tested in `rustzx-test/tests/access.rs` (the picture test fails if a write skips the screen).
 
+### 14. `Emulator` is `Clone`
+
+**Problem.** ZX Sidekick keeps whole machines in memory (quick states, reading facts on a copy without disturbing play), and patch 1 made only the processor cloneable.
+
+**Change.** `Emulator<H>` and the controller implement `Clone` when the host's frame buffer, tape asset, IO extender and debug interface do; everything under them (memory, screen, border, tape, joystick, mouse, mixer, beeper, the AY chip in `aym`, `BufferCursor`, the stub extender and debug interface) derives it. The copy is the whole machine, and runs apart from the original. The controller's pending emulation error isn't copied: it's set and taken within one step, so it's always empty between calls. Tested in `rustzx-test/tests/clone.rs`: a 48K and a 128K copied after start-up run 50 more frames exactly as the original (memory, registers, picture and every sound sample), and a change to a copy leaves the original alone.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:

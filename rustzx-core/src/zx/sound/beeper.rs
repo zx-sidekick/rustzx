@@ -1,7 +1,7 @@
 use crate::zx::sound::sample::{SampleGenerator, SoundSample};
 
 /// Simple beeper implementation
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct ZXBeeper {
     mic: bool,
     ear: bool,

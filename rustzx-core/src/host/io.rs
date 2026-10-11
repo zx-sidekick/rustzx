@@ -10,6 +10,7 @@ pub enum SeekFrom {
 }
 
 /// Implementation of loadable asset for buffer-like type
+#[derive(Clone)]
 pub struct BufferCursor<T: AsRef<[u8]>> {
     data: T,
     pos: usize,

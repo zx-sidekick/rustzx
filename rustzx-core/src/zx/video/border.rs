@@ -37,6 +37,7 @@ impl BeamInfo {
 }
 
 /// ZX Spectrum Border Device
+#[derive(Clone)]
 pub struct ZXBorder<FB: FrameBuffer> {
     machine: ZXMachine,
     buffer: FB,

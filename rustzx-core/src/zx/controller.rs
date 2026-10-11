@@ -63,6 +63,45 @@ pub(crate) struct ZXController<H: Host> {
     last_emulation_error: Option<Error>,
 }
 
+/// A copy of the whole machine's state, for hosts whose parts can be copied
+impl<H: Host> Clone for ZXController<H>
+where
+    H::FrameBuffer: Clone,
+    H::TapeAsset: Clone,
+    H::IoExtender: Clone,
+    H::DebugInterface: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            machine: self.machine,
+            memory: self.memory.clone(),
+            screen: self.screen.clone(),
+            tape: self.tape.clone(),
+            #[cfg(feature = "precise-border")]
+            border: self.border.clone(),
+            kempston: self.kempston.clone(),
+            mouse: self.mouse.clone(),
+            io_extender: self.io_extender.clone(),
+            debug_interface: self.debug_interface.clone(),
+            #[cfg(feature = "sound")]
+            mixer: self.mixer.clone(),
+            keyboard: self.keyboard,
+            keyboard_extended: self.keyboard_extended,
+            keyboard_sinclair: self.keyboard_sinclair,
+            caps_shift_modifier_mask: self.caps_shift_modifier_mask,
+            border_color: self.border_color,
+            frame_clocks: self.frame_clocks,
+            passed_frames: self.passed_frames,
+            events: self.events,
+            paging_enabled: self.paging_enabled,
+            screen_bank: self.screen_bank,
+            current_port_7ffd: self.current_port_7ffd,
+            // Set and taken within one step of `emulate_frames`, so always empty between calls
+            last_emulation_error: None,
+        }
+    }
+}
+
 impl<H: Host> ZXController<H> {
     /// Returns new ZXController from settings
     #[allow(clippy::let_and_return)]

@@ -65,6 +65,7 @@ pub trait IoExtender {
 }
 
 /// IO externder which does nothing
+#[derive(Clone)]
 pub struct StubIoExtender;
 
 impl IoExtender for StubIoExtender {
@@ -86,6 +87,7 @@ pub trait DebugInterface {
 }
 
 /// Debug interface which does nothing
+#[derive(Clone)]
 pub struct StubDebugInterface;
 
 impl DebugInterface for StubDebugInterface {

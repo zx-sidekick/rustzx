@@ -66,6 +66,29 @@ pub struct Emulator<H: Host> {
     resume_frame: bool,
 }
 
+/// A copy of the whole machine: memory, processor, picture, tape position, sound and input state.
+/// Running the copy leaves the original as it was.
+impl<H: Host> Clone for Emulator<H>
+where
+    H::FrameBuffer: Clone,
+    H::TapeAsset: Clone,
+    H::IoExtender: Clone,
+    H::DebugInterface: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            settings: self.settings,
+            cpu: self.cpu.clone(),
+            controller: self.controller.clone(),
+            mode: self.mode,
+            fast_load: self.fast_load,
+            #[cfg(feature = "sound")]
+            sound_enabled: self.sound_enabled,
+            resume_frame: self.resume_frame,
+        }
+    }
+}
+
 impl<H: Host> Emulator<H> {
     /// Constructs new emulator
     /// # Arguments
