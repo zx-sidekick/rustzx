@@ -35,7 +35,7 @@ use crate::zx::sound::sample::SoundSample;
 use crate::{host::BufferCursor, zx::machine::ZXMachine};
 
 /// Represents emulator stop reason
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EmulationStopReason {
     /// Requested frames count have been emulated successfully
     Completed,
@@ -311,8 +311,10 @@ impl<H: Host> Emulator<H> {
             }
             'cpu: loop {
                 if !resuming {
-                    // Emulation step. if instant event happened then accept in and execute
-                    self.cpu.emulate(&mut self.controller);
+                    // Emulation step: an interrupt, or one instruction. Stepping them apart
+                    // lets a breakpoint on an interrupt handler stop before the handler runs;
+                    // the timing is `emulate`'s.
+                    self.cpu.step(&mut self.controller);
                     if let Some(e) = self.controller.take_last_emulation_error() {
                         return Err(e);
                     }

@@ -119,6 +119,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** A call that stops at a breakpoint leaves a note, and the next call carries on that frame instead of starting a new count: if the frame already ended on the instruction that hit the breakpoint, it returns `Completed` straight away, having run nothing. Loading a snapshot clears the note. Tested in `rustzx-test/tests/frames.rs`: a one-instruction loop (`JR $`, 12 T-states, interrupts off) with a breakpoint on it stops every step, and `Completed` comes exactly every 69,888 / 12 = 5,824 stops. The unit-test job runs it.
 
+### 12. `rustzx-core` steps the processor with `Z80::step`
+
+**Problem.** `emulate_frames` ran the processor with `emulate()`, which takes a due interrupt and runs the handler's first instruction in the same call (patch 2). So a breakpoint on an interrupt handler's first address was never hit: `rustzx-core` never saw the program counter there. ZX Sidekick reports which addresses a frame ran, for its definitions' states, and stops at a game's main loop, which may be an interrupt handler.
+
+**Change.** `emulate_frames` calls `step()` instead, which takes an interrupt as a step of its own and then reports the handler's address to the bus, with `emulate()`'s timing. `EmulationStopReason` derives `Debug`. Tested in `rustzx-test/tests/frames.rs`: a breakpoint on the 48K ROM's handler at `0x0038` stops once a frame, before the handler runs. Every `rustzx-test` suite (the screens and sound compared by hash, the tape, keyboard and joystick tests, z80test) passes unchanged, and the unit-test job now runs them all.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:
@@ -140,13 +146,13 @@ Pin a commit rather than the branch, so a rebase here cannot change a build. Thi
 
 ## How it is checked
 
-`.github/workflows/test-rustzx-z80.yml` runs these on every pull request, and on every push to `zx-sidekick` that touches the processor or the core: format, clippy, the unit tests (in a debug build, so overflow checks are on) with the tests of the core's patches, zexall in two batches, and the z80test suites with the block instruction flags test; and, not required, a build with the minimum Rust version. Clippy runs on a pinned toolchain, moved on purpose, so a new clippy lint can't fail every PR at once. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs for `master` and pull requests into it. `zx-sidekick` requires all five jobs to pass, on a branch up to date with it, before a pull request can be merged.
+`.github/workflows/test-rustzx-z80.yml` runs these on every pull request, and on every push to `zx-sidekick` that touches the processor or the core: format, clippy, the unit tests (in a debug build, so overflow checks are on) with `rustzx-core`'s tests, zexall in two batches, and the z80test suites with the block instruction flags test; and, not required, a build with the minimum Rust version. Clippy runs on a pinned toolchain, moved on purpose, so a new clippy lint can't fail every PR at once. Upstream's workspace workflow (`ci.yml`) is left as it is and only runs for `master` and pull requests into it. `zx-sidekick` requires all five jobs to pass, on a branch up to date with it, before a pull request can be merged.
 
 ```
 cargo fmt -p rustzx-z80 -- --check
 cargo clippy -p rustzx-z80 --all-targets -- -D warnings
 cargo test -p rustzx-z80
-cargo test -p rustzx-test --test frames
+cargo test -p rustzx-test
 cargo test --release -p rustzx-z80 -- --include-ignored
 cargo test --release -p rustzx-test --test z80test -- --include-ignored
 ```

@@ -1,4 +1,5 @@
-//! `emulate_frames` stopped at a breakpoint carries on the same frame when called again.
+//! `emulate_frames` stops at breakpoints, an interrupt handler's included, and carries on the
+//! same frame when called again.
 
 use rustzx_core::{
     host::{
@@ -33,12 +34,12 @@ impl HostContext<LoopHost> for Context {
     fn frame_buffer_context(&self) {}
 }
 
-/// Stops on every arrival at `LOOP`.
-struct StopAtLoop;
+/// Stops on every arrival at its address.
+struct StopAt(u16);
 
-impl DebugInterface for StopAtLoop {
+impl DebugInterface for StopAt {
     fn check_pc_breakpoint(&mut self, addr: u16) -> bool {
-        addr == LOOP
+        addr == self.0
     }
 }
 
@@ -50,7 +51,7 @@ impl Host for LoopHost {
     type FrameBuffer = NoPicture;
     type EmulationStopwatch = InstantStopwatch;
     type IoExtender = StubIoExtender;
-    type DebugInterface = StopAtLoop;
+    type DebugInterface = StopAt;
 }
 
 /// A 48K SNA snapshot running `JR $` at `LOOP` (uncontended, 12 T-states a turn), interrupts off.
@@ -71,7 +72,7 @@ fn a_frame_is_not_lost_when_its_last_instruction_hits_a_breakpoint() {
     emulator
         .load_snapshot(Snapshot::Sna(BufferCursor::new(jr_loop_snapshot())))
         .expect("the snapshot loads");
-    emulator.set_debug_interface(StopAtLoop);
+    emulator.set_debug_interface(StopAt(LOOP));
 
     // Every step stops, so the step that ends each frame stops too. Count the stops between
     // frame ends.
@@ -95,4 +96,33 @@ fn a_frame_is_not_lost_when_its_last_instruction_hits_a_breakpoint() {
         frames[1..].iter().all(|&n| n == STOPS_PER_FRAME),
         "stops between frame ends: {frames:?}"
     );
+}
+
+#[test]
+fn a_breakpoint_on_the_interrupt_handler_stops_before_it_runs() {
+    const INTERRUPT: u16 = 0x0038;
+    let mut emulator: Emulator<LoopHost> =
+        Emulator::new(presets::settings_48k_nosound(), Context).expect("a 48K emulator");
+    // Let the ROM start up and enable interrupts.
+    for _ in 0..100 {
+        emulator
+            .emulate_frames(Duration::from_secs(1))
+            .expect("emulation runs");
+    }
+    emulator.set_debug_interface(StopAt(INTERRUPT));
+
+    let mut stops = Vec::new();
+    for _ in 0..20 {
+        stops.push(
+            emulator
+                .emulate_frames(Duration::from_secs(1))
+                .expect("emulation runs")
+                .stop_reason,
+        );
+    }
+    let breakpoints = stops
+        .iter()
+        .filter(|&&s| s == EmulationStopReason::Breakpoint)
+        .count();
+    assert_eq!(breakpoints, 10, "one stop at the handler a frame: {stops:?}");
 }

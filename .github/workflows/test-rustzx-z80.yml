@@ -61,9 +61,10 @@ jobs:
       # Debug build, so arithmetic overflow panics as it would in a caller's debug build
       - name: Test
         run: cargo test -p rustzx-z80
-      # The tests of the patches to rustzx-core
-      - name: Test rustzx-core's patches
-        run: cargo test -p rustzx-test --test frames
+      # rustzx-core's tests, its patches' among them: screens and sound compared by hash, so a
+      # change to the core's timing shows here
+      - name: Test rustzx-core
+        run: cargo test -p rustzx-test
 
   zexall_batch_1:
     name: "Zexall tests batch 1"
