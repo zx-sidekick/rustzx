@@ -137,6 +137,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** `Emulator<H>` and the controller implement `Clone` when the host's frame buffer, tape asset, IO extender and debug interface do; everything under them (memory, screen, border, tape, joystick, mouse, mixer, beeper, the AY chip in `aym`, `BufferCursor`, the stub extender and debug interface) derives it. The copy is the whole machine, and runs apart from the original. The controller's pending emulation error isn't copied: it's set and taken within one step, so it's always empty between calls. Tested in `rustzx-test/tests/clone.rs`: a 48K and a 128K copied after start-up run 50 more frames exactly as the original (memory, registers, picture and every sound sample), and a change to a copy leaves the original alone.
 
+### 15. SZX snapshots are saved, and load as saved
+
+**Problem.** `rustzx-core` loaded SZX but saving returned `NotSupported`, and a 48K SNA save pushes the program counter onto the program's own stack, so ZX Sidekick couldn't save a game without touching its memory. Writing the saver showed three faults in the loader: it read the creator block one byte past the 36 the format gives it (a panic on any snapshot with a spec-sized `CRTR`); it set port `0xFE` through the bus after setting the frame's T-state count, so a loaded machine ran 4 T-states late; and it put the AY's registers in the chip's copy without writing them to the sound chip.
+
+**Change.** `szx::save` writes `CRTR`, `Z80R`, `SPCR`, `AY` (when the AY is on), `KEYB`, `AMXM`, and a `RAMP` block for each RAM page, zlib-compressed with the `zlib` feature: the inverse of the loader, so what it saves loads back as it was. A halted processor's PC is written one back, since the loader moves it past the `HALT`. The loader no longer reads the creator block (it only names the program that wrote it), sets the beeper and border directly, and `ZXAyChip::set_regs` writes each register to the chip. `Regs::get_q` reads Q, for the `FSET` flag. The tape and its position aren't saved. Tested in `rustzx-test/tests/szx_save.rs`: a 48K, a 128K with bank 3 paged in and the AY sounding, and a halted machine each load back with the same memory, registers and interrupt mode, then run 50 frames as the original (the same picture, and sound but for the AY, whose tone and envelope position SZX doesn't hold), and save again to the same bytes.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:

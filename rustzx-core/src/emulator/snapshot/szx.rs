@@ -1,8 +1,10 @@
 use crate::{
     emulator::Emulator,
-    error::{SnapshotLoadError, SnapshotSaveError},
+    error::SnapshotLoadError,
     host::{DataRecorder, Host, LoadableAsset, SeekFrom, SeekableAsset},
-    zx::{joy::kempston, mouse::kempston::KempstonMouse, video::colors::ZXColor},
+    zx::{
+        joy::kempston, machine::ZXMachine, mouse::kempston::KempstonMouse, video::colors::ZXColor,
+    },
     Result,
 };
 
@@ -11,7 +13,7 @@ use alloc::{str::from_utf8, vec};
 #[cfg(feature = "zlib")]
 use miniz_oxide::inflate::decompress_to_vec_zlib_with_limit;
 
-use rustzx_z80::Z80Bus;
+use rustzx_z80::IntMode;
 
 const ZXST_MID_128K: u32 = 2;
 
@@ -31,13 +33,9 @@ const ZXSTRF_COMPRESSED: u32 = 1;
 const ZXST_HEADER_SIZE: usize = 8; // The zx-state header
 const ZXST_BLOCK_HEADER_SIZE: usize = 8; // The header for each block
 
-// Process Creator (CRTR) block
-fn process_crtr_block<H: Host>(_: &mut Emulator<H>, block_data: &[u8]) {
-    let crtr_name_bytes = &block_data[0..33];
-    let _ = from_utf8(crtr_name_bytes).unwrap();
-    let _ = u16::from_le_bytes([block_data[33], block_data[34]]);
-    let _ = u16::from_le_bytes([block_data[35], block_data[36]]);
-}
+// The Creator (CRTR) block (szCreator[32], chMajorVersion, chMinorVersion, chData[]) only says
+// which program wrote the snapshot, so nothing of it is read. It was read one byte past the
+// spec's 36, which panicked on a block of exactly that size.
 
 // Process ZXSTZ80REGS (Z80R) block
 fn process_z80r_block<H: Host>(emulator: &mut Emulator<H>, block_data: &[u8]) {
@@ -185,13 +183,23 @@ fn process_spcr_block<H: Host>(emulator: &mut Emulator<H>, machine_id: u32, bloc
     // For Pentagon 1024 model.
     // Only 128 and 48k models supported currently. Skipping block_data[2] (union)
 
-    // chFe
-    emulator.controller.write_io(0x0fe, block_data[3]);
+    // chFe: the beeper's EAR and MIC bits. Set directly: an OUT through the bus would charge
+    // its I/O time to the frame, whose T-state count the Z80R block has already set.
+    #[cfg(feature = "sound")]
+    {
+        let fe = block_data[3];
+        emulator
+            .controller
+            .mixer
+            .beeper
+            .change_state(fe & 0x10 != 0, fe & 0x08 != 0);
+    }
 
-    // chBorder
-    // Setting the border after the out to 0xfe above because that too
-    // sets the border color.
-    emulator.controller.border_color = ZXColor::from_bits(block_data[0]);
+    // chBorder, through the border's own setter so a precise border is drawn from it too
+    let clocks = emulator.controller.frame_clocks;
+    emulator
+        .controller
+        .set_border_color(clocks, ZXColor::from_bits(block_data[0]));
 }
 
 // Process ZXSTAYBLOCK (AY00)
@@ -370,9 +378,6 @@ where
         }
 
         match id_str.as_str() {
-            "CRTR" => {
-                process_crtr_block(emulator, &block_data);
-            }
             "Z80R" => {
                 process_z80r_block(emulator, &block_data);
             }
@@ -404,10 +409,179 @@ where
     Ok(())
 }
 
-pub fn save<H, R>(_: &mut Emulator<H>, _: R) -> Result<()>
+/// The creator name written in the CRTR block
+const CREATOR: &[u8] = b"rustzx";
+
+const ZXST_MAJOR: u8 = 1;
+/// 1.5 for the FSET flag (Q)
+const ZXST_MINOR: u8 = 5;
+const ZXST_MID_48K: u8 = 1;
+
+/// SZX snapshot saving function: the inverse of [`load`], so a saved machine loads back as it was
+///
+/// Writes CRTR, Z80R, SPCR, AY (when the AY is on), KEYB, AMXM and a RAMP block for each RAM
+/// page, compressed with zlib when the `zlib` feature is on. The tape and its position aren't
+/// saved.
+pub fn save<H, R>(emulator: &mut Emulator<H>, mut recorder: R) -> Result<()>
 where
     H: Host,
     R: DataRecorder,
 {
-    Err(SnapshotSaveError::NotSupported.into())
+    let is_48k = emulator.controller.machine == ZXMachine::Sinclair48K;
+    let mut out = Vec::new();
+
+    // ZXST header
+    out.extend_from_slice(b"ZXST");
+    out.push(ZXST_MAJOR);
+    out.push(ZXST_MINOR);
+    out.push(if is_48k {
+        ZXST_MID_48K
+    } else {
+        ZXST_MID_128K as u8
+    });
+    out.push(0); // chFlags
+
+    // CRTR: szCreator[32], chMajorVersion, chMinorVersion
+    let mut crtr = vec![0u8; 36];
+    crtr[..CREATOR.len()].copy_from_slice(CREATOR);
+    push_block(&mut out, b"CRTR", &crtr);
+
+    push_block(&mut out, b"Z80R", &z80r_block(emulator));
+
+    // SPCR: chBorder, ch7ffd, ch1ffd/chEff7, chFe, chReserved[4]
+    let border = emulator.controller.border_color as u8;
+    #[cfg(feature = "sound")]
+    let (ear, mic) = emulator.controller.mixer.beeper.state();
+    #[cfg(not(feature = "sound"))]
+    let (ear, mic) = (false, false);
+    let fe = border | (u8::from(mic) << 3) | (u8::from(ear) << 4);
+    let port_7ffd = if is_48k {
+        0
+    } else {
+        emulator.controller.read_7ffd()
+    };
+    push_block(&mut out, b"SPCR", &[border, port_7ffd, 0, fe, 0, 0, 0, 0]);
+
+    #[cfg(all(feature = "sound", feature = "ay"))]
+    if emulator.settings.ay_enabled {
+        // AY: chFlags, chCurrentRegister, chAyRegs[16]
+        let ay = &emulator.controller.mixer.ay;
+        let mut block = vec![
+            if is_48k { ZXSTAYF_128AY as u8 } else { 0 },
+            ay.current_reg(),
+        ];
+        block.extend_from_slice(ay.regs());
+        push_block(&mut out, b"AY\0\0", &block);
+    }
+
+    // KEYB: dwFlags, chKeyboardJoystick
+    let joystick = if emulator.controller.kempston.is_some() {
+        ZXSTKJT_KEMPSTON as u8
+    } else {
+        0
+    };
+    push_block(&mut out, b"KEYB", &[0, 0, 0, 0, joystick]);
+
+    // AMXM: chType, chCtrlA[3], chCtrlB[3]
+    let mouse = if emulator.controller.mouse.is_some() {
+        ZXSTM_KEMPSTON as u8
+    } else {
+        0
+    };
+    push_block(&mut out, b"AMXM", &[mouse, 0, 0, 0, 0, 0, 0]);
+
+    // RAMP: wFlags, chPageNo, the page's 16K
+    let pages: &[u8] = if is_48k {
+        &[0, 1, 2]
+    } else {
+        &[0, 1, 2, 3, 4, 5, 6, 7]
+    };
+    for &page in pages {
+        // The 48K's pages are numbered as the 128K's that sit at the same addresses
+        let page_no = if is_48k {
+            [5, 2, 0][page as usize]
+        } else {
+            page
+        };
+        let data = emulator.controller.memory.ram_page_data(page);
+        let (flags, data) = compress_page(data);
+        let mut block = Vec::with_capacity(3 + data.len());
+        block.extend_from_slice(&(flags as u16).to_le_bytes());
+        block.push(page_no);
+        block.extend_from_slice(&data);
+        push_block(&mut out, b"RAMP", &block);
+    }
+
+    recorder.write_all(&out)?;
+    Ok(())
+}
+
+fn push_block(out: &mut Vec<u8>, id: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(id);
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(data);
+}
+
+// ZXSTZ80REGS (Z80R), as `process_z80r_block` reads it
+fn z80r_block<H: Host>(emulator: &Emulator<H>) -> Vec<u8> {
+    let cpu = &emulator.cpu;
+    let mut regs = cpu.regs.clone();
+    let mut block = Vec::with_capacity(37);
+    for value in [regs.get_af(), regs.get_bc(), regs.get_de(), regs.get_hl()] {
+        block.extend_from_slice(&value.to_le_bytes());
+    }
+    regs.swap_af_alt();
+    block.extend_from_slice(&regs.get_af().to_le_bytes());
+    regs.swap_af_alt();
+    regs.exx();
+    for value in [regs.get_bc(), regs.get_de(), regs.get_hl()] {
+        block.extend_from_slice(&value.to_le_bytes());
+    }
+    regs.exx();
+    // The loader moves PC past a HALT when the halted flag is set, so it's written one back
+    let pc = if cpu.halted {
+        regs.get_pc().wrapping_sub(1)
+    } else {
+        regs.get_pc()
+    };
+    for value in [regs.get_ix(), regs.get_iy(), regs.get_sp(), pc] {
+        block.extend_from_slice(&value.to_le_bytes());
+    }
+    block.push(regs.get_i());
+    block.push(regs.get_r());
+    block.push(u8::from(regs.get_iff1()));
+    block.push(u8::from(regs.get_iff2()));
+    block.push(match cpu.get_im() {
+        IntMode::Im0 => 0,
+        IntMode::Im1 => 1,
+        IntMode::Im2 => 2,
+    });
+    block.extend_from_slice(&(emulator.controller.frame_clocks as u32).to_le_bytes());
+    block.push(emulator.controller.machine.specs().interrupt_length as u8); // chHoldIntReqCycles
+    let mut flags = 0;
+    if cpu.skip_interrupt {
+        flags |= ZXSTZF_EILAST;
+    }
+    if cpu.halted {
+        flags |= ZXSTZF_HALTED;
+    }
+    if regs.get_q() != 0 {
+        flags |= ZXSTZF_FSET;
+    }
+    block.push(flags as u8);
+    block.extend_from_slice(&regs.get_mem_ptr().to_le_bytes());
+    block
+}
+
+#[cfg(feature = "zlib")]
+fn compress_page(data: &[u8]) -> (u32, Vec<u8>) {
+    (
+        ZXSTRF_COMPRESSED,
+        miniz_oxide::deflate::compress_to_vec_zlib(data, 6),
+    )
+}
+
+#[cfg(not(feature = "zlib"))]
+fn compress_page(data: &[u8]) -> (u32, Vec<u8>) {
+    (0, data.to_vec())
 }

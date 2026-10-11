@@ -9,6 +9,11 @@ pub(crate) struct ZXBeeper {
 
 impl ZXBeeper {
     /// Changes next beeper bit
+    /// The EAR and MIC bits last written to port `0xFE`
+    pub fn state(&self) -> (bool, bool) {
+        (self.ear, self.mic)
+    }
+
     pub fn change_state(&mut self, ear: bool, mic: bool) {
         self.ear = ear;
         self.mic = mic;
