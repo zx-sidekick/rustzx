@@ -124,5 +124,8 @@ fn a_breakpoint_on_the_interrupt_handler_stops_before_it_runs() {
         .iter()
         .filter(|&&s| s == EmulationStopReason::Breakpoint)
         .count();
-    assert_eq!(breakpoints, 10, "one stop at the handler a frame: {stops:?}");
+    assert_eq!(
+        breakpoints, 10,
+        "one stop at the handler a frame: {stops:?}"
+    );
 }
