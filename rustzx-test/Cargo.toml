@@ -21,6 +21,7 @@ nanoid = "0.4"
 png = "0.16"
 rustzx-core = { workspace = true, features = ["full"] }
 rustzx-utils = { workspace = true, features = ["std"] }
+rustzx-z80 = { workspace = true }
 sha2 = "0.9"
 wav = "1.0"
 

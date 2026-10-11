@@ -53,8 +53,22 @@ impl ZXAyChip {
         self.regs[self.current_reg]
     }
 
+    /// Sets every register, as written through the port, so the chip sounds as they say
     pub fn set_regs(&mut self, regs: &[u8]) {
         self.regs.copy_from_slice(&regs[..16]);
+        for (reg, &value) in self.regs.iter().enumerate() {
+            self.ay.write_register(reg as u8, value);
+        }
+    }
+
+    /// The register the next read or write of the data port goes to
+    pub fn current_reg(&self) -> u8 {
+        self.current_reg as u8
+    }
+
+    /// The sixteen registers, as last written
+    pub fn regs(&self) -> &[u8; 16] {
+        &self.regs
     }
 }
 

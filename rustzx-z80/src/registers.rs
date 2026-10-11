@@ -349,6 +349,12 @@ impl Regs {
         self.q = self.f;
     }
 
+    /// Q: F if the last instruction set the flags, 0 otherwise
+    #[must_use]
+    pub fn get_q(&self) -> u8 {
+        self.q
+    }
+
     #[must_use]
     pub fn get_last_q(&self) -> u8 {
         self.last_q
