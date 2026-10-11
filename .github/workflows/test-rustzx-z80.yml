@@ -2,13 +2,14 @@ name: rustzx-z80 tests
 
 # Runs on every pull request, whatever it changes, because `zx-sidekick` requires these checks
 # before merging: a PR they didn't run on could never be merged. Pushes to `zx-sidekick` run
-# only when the processor, its z80test suites, or this workflow change. (`master` follows
+# only when the processor, the core's patched parts, the test suites, or this workflow change. (`master` follows
 # upstream and runs upstream's own copy of this file, so it isn't listed.)
 on:
   push:
     branches: [ zx-sidekick ]
     paths:
       - 'rustzx-z80/**'
+      - 'rustzx-core/**'
       - 'rustzx-test/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -60,6 +61,9 @@ jobs:
       # Debug build, so arithmetic overflow panics as it would in a caller's debug build
       - name: Test
         run: cargo test -p rustzx-z80
+      # The tests of the patches to rustzx-core
+      - name: Test rustzx-core's patches
+        run: cargo test -p rustzx-test --test frames
 
   zexall_batch_1:
     name: "Zexall tests batch 1"

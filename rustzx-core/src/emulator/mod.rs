@@ -62,6 +62,8 @@ pub struct Emulator<H: Host> {
     fast_load: bool,
     #[cfg(feature = "sound")]
     sound_enabled: bool,
+    /// The last `emulate_frames` stopped at a breakpoint, so the next carries on its frame.
+    resume_frame: bool,
 }
 
 impl<H: Host> Emulator<H> {
@@ -85,6 +87,7 @@ impl<H: Host> Emulator<H> {
             fast_load,
             #[cfg(feature = "sound")]
             sound_enabled,
+            resume_frame: false,
         };
 
         Ok(this)
@@ -125,6 +128,8 @@ impl<H: Host> Emulator<H> {
     }
 
     pub fn load_snapshot(&mut self, snapshot: Snapshot<impl SnapshotAsset>) -> Result<()> {
+        // A loaded machine starts its own frame, whatever the last one stopped at.
+        self.resume_frame = false;
         match snapshot {
             Snapshot::Sna(asset) => snapshot::sna::load(self, asset),
             Snapshot::Szx(asset) => snapshot::szx::load(self, asset),
@@ -291,31 +296,42 @@ impl<H: Host> Emulator<H> {
     }
 
     /// Perform emulatio up to `emulation_limit` duration, returns actual elapsed duration
+    ///
+    /// A call after one that stopped at a breakpoint carries on the frame that one stopped in:
+    /// if the instruction that hit the breakpoint also ended the frame, it returns `Completed`
+    /// straight away, having run nothing.
     pub fn emulate_frames(&mut self, emulation_limit: Duration) -> Result<EmulationInfo> {
         let stopwatch = H::EmulationStopwatch::new();
+        let mut resuming = core::mem::take(&mut self.resume_frame);
         // frame loop
         loop {
-            // reset controller internal frame counter
-            self.controller.reset_frame_counter();
+            // reset controller internal frame counter, unless carrying on a frame
+            if !resuming {
+                self.controller.reset_frame_counter();
+            }
             'cpu: loop {
-                // Emulation step. if instant event happened then accept in and execute
-                self.cpu.emulate(&mut self.controller);
-                if let Some(e) = self.controller.take_last_emulation_error() {
-                    return Err(e);
-                }
+                if !resuming {
+                    // Emulation step. if instant event happened then accept in and execute
+                    self.cpu.emulate(&mut self.controller);
+                    if let Some(e) = self.controller.take_last_emulation_error() {
+                        return Err(e);
+                    }
 
-                let events = self.controller.take_events();
-                if !events.is_empty() {
-                    if events.contains(EmulationEvents::TAPE_FAST_LOAD_TRIGGER_DETECTED) {
-                        self.process_fast_load_event()?;
-                    }
-                    if events.contains(EmulationEvents::PC_BREAKPOINT) {
-                        return Ok(EmulationInfo {
-                            duration: stopwatch.measure(),
-                            stop_reason: EmulationStopReason::Breakpoint,
-                        });
+                    let events = self.controller.take_events();
+                    if !events.is_empty() {
+                        if events.contains(EmulationEvents::TAPE_FAST_LOAD_TRIGGER_DETECTED) {
+                            self.process_fast_load_event()?;
+                        }
+                        if events.contains(EmulationEvents::PC_BREAKPOINT) {
+                            self.resume_frame = true;
+                            return Ok(EmulationInfo {
+                                duration: stopwatch.measure(),
+                                stop_reason: EmulationStopReason::Breakpoint,
+                            });
+                        }
                     }
                 }
+                resuming = false;
 
                 match self.mode {
                     EmulationMode::FrameCount(frames) => {
