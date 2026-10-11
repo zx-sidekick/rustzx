@@ -149,6 +149,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** `RustzxSettings::border_size` takes a `zx::video::BorderSize`: `Standard` (320×240, the default, as before) or `Tall` (320×256). The border's beam timing starts 8 × the size's border rows before the first screen line, so a tall border is the standard one with eight more lines each side. `BorderSize::canvas_y` says where the screen sits in the border buffer. Tested in `rustzx-test/tests/access.rs`: the buffer sizes, a red border reaching a tall border's last line, and, with the border changing every 27 T-states, a tall border's lines 8 to 247 matching a standard border's 0 to 239 pixel for pixel. The tape test's border hashes are unchanged.
 
+### 17. The core's dependencies at their latest releases
+
+**Problem.** `rustzx-core` depended on old releases (`bitflags` 1.3, `strum` 0.22, `from_variants` 0.6, `miniz_oxide` 0.7), which brought three versions of `syn` into ZX Sidekick's build; ZX Sidekick takes the latest version of each dependency.
+
+**Change.** `bitflags` 2.13, `strum` 0.28, `miniz_oxide` 0.9, `lazy_static` 1.5, `enum_dispatch` 0.3.13, and `aym`'s `num-traits` 0.2.19 and `libm` 0.2.16. `EmulationEvents` derives what bitflags 2 no longer gives it, and `take` is `mem::take`. `from_variants` (whose latest still used `syn` 1) and `displaydoc` (`syn` 3) are gone: the error types' `Display` and `From` impls are written out, with each message as before (a wrapping `Error` now also shows its cause), and every error type implements `core::error::Error`, so hosts can use them as a source. One `syn` remains. Every `rustzx-test` suite passes unchanged.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:
