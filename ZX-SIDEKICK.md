@@ -155,6 +155,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** `bitflags` 2.13, `strum` 0.28, `miniz_oxide` 0.9, `lazy_static` 1.5, `enum_dispatch` 0.3.13, and `aym`'s `num-traits` 0.2.19 and `libm` 0.2.16. `EmulationEvents` derives what bitflags 2 no longer gives it, and `take` is `mem::take`. `from_variants` (whose latest still used `syn` 1) and `displaydoc` (`syn` 3) are gone: the error types' `Display` and `From` impls are written out, with each message as before (a wrapping `Error` now also shows its cause), and every error type implements `core::error::Error`, so hosts can use them as a source. One `syn` remains. Every `rustzx-test` suite passes unchanged.
 
+### 18. No procedural macros in the core
+
+**Problem.** After patch 17, `enum_dispatch` was the core's last procedural macro, on `syn` 2, while the latest `serde`, `toml` and `schemars` that ZX Sidekick adds use `syn` 3: two versions in one build.
+
+**Change.** The tape enum's dispatch to `Tap` or `Empty`, and its two `From` impls, are written out (a small `match` macro), and `enum_dispatch` is dropped. The core's default dependencies now hold no procedural macro at all. Every `rustzx-test` suite passes unchanged.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:

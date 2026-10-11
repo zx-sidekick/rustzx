@@ -22,7 +22,6 @@ zlib = ["miniz_oxide"]
 [dependencies]
 bitflags = "2.13"
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
-enum_dispatch = "0.3.13"
 aym = { workspace = true, optional = true }
 rustzx-z80 = { workspace = true }
 strum = { version = "0.28", default-features = false, features = [

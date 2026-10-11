@@ -9,10 +9,7 @@ use crate::{
     Result,
 };
 
-use enum_dispatch::enum_dispatch;
-
 #[allow(clippy::large_enum_variant)]
-#[enum_dispatch(TapeImpl)]
 #[derive(Clone)]
 pub enum ZXTape<A: LoadableAsset + SeekableAsset> {
     Tap(Tap<A>),
@@ -25,7 +22,55 @@ impl<A: LoadableAsset + SeekableAsset> Default for ZXTape<A> {
     }
 }
 
-#[enum_dispatch]
+impl<A: LoadableAsset + SeekableAsset> From<Tap<A>> for ZXTape<A> {
+    fn from(tap: Tap<A>) -> Self {
+        Self::Tap(tap)
+    }
+}
+
+impl<A: LoadableAsset + SeekableAsset> From<Empty> for ZXTape<A> {
+    fn from(empty: Empty) -> Self {
+        Self::Empty(empty)
+    }
+}
+
+/// Calls the same method on whichever tape it is
+macro_rules! dispatch {
+    ($self:ident, $tape:ident => $call:expr) => {
+        match $self {
+            Self::Tap($tape) => $call,
+            Self::Empty($tape) => $call,
+        }
+    };
+}
+
+impl<A: LoadableAsset + SeekableAsset> TapeImpl for ZXTape<A> {
+    fn can_fast_load(&self) -> bool {
+        dispatch!(self, t => t.can_fast_load())
+    }
+    fn next_block_byte(&mut self) -> Result<Option<u8>> {
+        dispatch!(self, t => t.next_block_byte())
+    }
+    fn next_block(&mut self) -> Result<bool> {
+        dispatch!(self, t => t.next_block())
+    }
+    fn current_bit(&self) -> bool {
+        dispatch!(self, t => t.current_bit())
+    }
+    fn process_clocks(&mut self, clocks: usize) -> Result<()> {
+        dispatch!(self, t => t.process_clocks(clocks))
+    }
+    fn stop(&mut self) {
+        dispatch!(self, t => t.stop())
+    }
+    fn play(&mut self) {
+        dispatch!(self, t => t.play())
+    }
+    fn rewind(&mut self) -> Result<()> {
+        dispatch!(self, t => t.rewind())
+    }
+}
+
 pub trait TapeImpl {
     fn can_fast_load(&self) -> bool;
     /// Returns byte of current block or `None` if block has ended
