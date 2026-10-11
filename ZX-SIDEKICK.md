@@ -125,6 +125,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** `emulate_frames` calls `step()` instead, which takes an interrupt as a step of its own and then reports the handler's address to the bus, with `emulate()`'s timing. `EmulationStopReason` derives `Debug`. Tested in `rustzx-test/tests/frames.rs`: a breakpoint on the 48K ROM's handler at `0x0038` stops once a frame, before the handler runs. Every `rustzx-test` suite (the screens and sound compared by hash, the tape, keyboard and joystick tests, z80test) passes unchanged, and the unit-test job now runs them all.
 
+### 13. Writing memory, the processor and RAM banks from outside
+
+**Problem.** ZX Sidekick writes the emulated machine between frames (training switches, crafted situations, saves) and reads its registers and the 128K's banks. `rustzx-core` offered `peek` and `execute_poke`, which writes the ROM too and leaves the picture stale when it writes display memory, and kept the processor private.
+
+**Change.** `Emulator::write(addr, value)` writes as the processor does, through the controller's `write_internal`: the ROM is left alone and display memory reaches the picture, with no time passing. `Emulator::cpu()` and `cpu_mut()` lend the `Z80`, whose registers, `halted`, `skip_interrupt` and interrupt mode the earlier patches made public. `Emulator::ram_bank(bank)` reads a 16K RAM bank whether paged in or not, `None` past the last. Tested in `rustzx-test/tests/access.rs` (the picture test fails if a write skips the screen).
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:
