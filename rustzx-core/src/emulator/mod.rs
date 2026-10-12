@@ -151,12 +151,14 @@ impl<H: Host> Emulator<H> {
     }
 
     pub fn load_snapshot(&mut self, snapshot: Snapshot<impl SnapshotAsset>) -> Result<()> {
-        // A loaded machine starts its own frame, whatever the last one stopped at.
-        self.resume_frame = false;
         match snapshot {
             Snapshot::Sna(asset) => snapshot::sna::load(self, asset),
             Snapshot::Szx(asset) => snapshot::szx::load(self, asset),
-        }
+        }?;
+        // A loaded machine starts its own frame, whatever the last one stopped at; one that
+        // refused a snapshot goes on as it was.
+        self.resume_frame = false;
+        Ok(())
     }
 
     pub fn save_snapshot<R>(&mut self, recorder: SnapshotRecorder<R>) -> Result<()>

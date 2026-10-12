@@ -239,6 +239,11 @@ fn a_damaged_snapshot_is_an_error_and_changes_nothing() {
     bad_id[z80r..z80r + 4].copy_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC]);
     let mut huge = szx.clone();
     huge[z80r + 4..z80r + 8].copy_from_slice(&u32::MAX.to_le_bytes());
+    // The machine's own registers, but PC elsewhere: a block that would change it if applied.
+    let z80r_size =
+        u32::from_le_bytes([szx[z80r + 4], szx[z80r + 5], szx[z80r + 6], szx[z80r + 7]]);
+    let mut other_registers = szx[z80r + 8..z80r + 8 + z80r_size as usize].to_vec();
+    other_registers[22..24].copy_from_slice(&0x1234u16.to_le_bytes());
     let mut short_page = vec![0, 0, 0];
     short_page.extend_from_slice(&[0x55; 100]);
     let damaged: Vec<(&str, Vec<u8>)> = vec![
@@ -257,7 +262,28 @@ fn a_damaged_snapshot_is_an_error_and_changes_nothing() {
         ),
         (
             "a page a 48K doesn't have",
-            [header, &block(b"RAMP", &[0, 0, 9, 0])].concat(),
+            [
+                header,
+                &block(b"RAMP", &[&[0, 0, 1][..], &[0; 16384]].concat()),
+            ]
+            .concat(),
+        ),
+        (
+            "a page past a 48K's",
+            [
+                header,
+                &block(b"RAMP", &[&[0, 0, 9][..], &[0; 16384]].concat()),
+            ]
+            .concat(),
+        ),
+        (
+            "good registers, then a bad page",
+            [
+                header,
+                &block(b"Z80R", &other_registers),
+                &block(b"RAMP", &short_page),
+            ]
+            .concat(),
         ),
         (
             "less than a page of data",

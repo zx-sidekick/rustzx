@@ -272,13 +272,13 @@ fn read_ramp_block<H: Host>(
 
     // chPageNo
     let mut page_num = block_data[2];
-    // Remap page numbers for 16k/48k machines
+    // Remap page numbers for 16k/48k machines, which have pages 5, 2 and 0 only
     if machine_id < ZXST_MID_128K {
         page_num = match page_num {
             5 => 0,
             2 => 1,
             0 => 2,
-            _ => page_num,
+            _ => return Err(SnapshotLoadError::InvalidSZXFile.into()),
         };
     }
     if (page_num as usize + 1) * PAGE_SIZE > emulator.controller.memory.ram().len() {
@@ -317,6 +317,7 @@ fn least_size(id: &str) -> usize {
     match id {
         "Z80R" => 37,
         "SPCR" => 4,
+        #[cfg(all(feature = "sound", feature = "ay"))]
         "AY\0\0" => 18,
         "KEYB" => 5,
         "AMXM" => 1,
@@ -377,7 +378,7 @@ where
             Err(_) => return Err(SnapshotLoadError::InvalidSZXFile.into()),
         };
         // A size past the file's end is damage, not a block to allocate for.
-        if size > length - cursor_pos {
+        if size > length.saturating_sub(cursor_pos) {
             return Err(SnapshotLoadError::InvalidSZXFile.into());
         }
 
