@@ -202,3 +202,75 @@ fn a_halted_machine_saved_loads_back_halted() {
     assert!(emulator.cpu().halted, "halted at the frame's end");
     round_trip(settings, emulator, true);
 }
+
+/// A block as a snapshot holds it: its id, its size and its bytes.
+fn block(id: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let size = u32::try_from(data.len()).expect("a small block");
+    [&id[..], &size.to_le_bytes(), data].concat()
+}
+
+/// Where each block of a snapshot starts, and its id.
+fn blocks(szx: &[u8]) -> Vec<(usize, [u8; 4])> {
+    let mut at = 8;
+    let mut found = Vec::new();
+    while at + 8 <= szx.len() {
+        let id = [szx[at], szx[at + 1], szx[at + 2], szx[at + 3]];
+        let size = u32::from_le_bytes([szx[at + 4], szx[at + 5], szx[at + 6], szx[at + 7]]);
+        found.push((at, id));
+        at += 8 + size as usize;
+    }
+    found
+}
+
+#[test]
+fn a_damaged_snapshot_is_an_error_and_changes_nothing() {
+    let mut settings = presets::settings_48k();
+    settings.ay_enabled = false;
+    let szx = saved(&mut booted(settings));
+    let header = &szx[..8];
+    let starts = blocks(&szx);
+    let z80r = starts
+        .iter()
+        .find(|(_, id)| id == b"Z80R")
+        .expect("a Z80R")
+        .0;
+
+    let mut bad_id = szx.clone();
+    bad_id[z80r..z80r + 4].copy_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC]);
+    let mut huge = szx.clone();
+    huge[z80r + 4..z80r + 8].copy_from_slice(&u32::MAX.to_le_bytes());
+    let mut short_page = vec![0, 0, 0];
+    short_page.extend_from_slice(&[0x55; 100]);
+    let damaged: Vec<(&str, Vec<u8>)> = vec![
+        ("cut in the header", szx[..5].to_vec()),
+        ("cut in a block's header", szx[..z80r + 3].to_vec()),
+        ("cut in a block", szx[..szx.len() - 100].to_vec()),
+        ("an id that isn't text", bad_id),
+        ("a size past the end", huge),
+        (
+            "a Z80R too short",
+            [header, &block(b"Z80R", &[0; 10])].concat(),
+        ),
+        (
+            "a RAMP too short",
+            [header, &block(b"RAMP", &[0, 0])].concat(),
+        ),
+        (
+            "a page a 48K doesn't have",
+            [header, &block(b"RAMP", &[0, 0, 9, 0])].concat(),
+        ),
+        (
+            "less than a page of data",
+            [header, &block(b"RAMP", &short_page)].concat(),
+        ),
+    ];
+
+    for (what, bytes) in damaged {
+        let mut machine = booted(settings);
+        let (memory, regs) = (ram(&machine), registers(&machine));
+        let loaded = machine.load_snapshot(Snapshot::Szx(BufferCursor::new(bytes)));
+        assert!(loaded.is_err(), "{what}: refused");
+        assert!(ram(&machine) == memory, "{what}: the same memory");
+        assert_eq!(registers(&machine), regs, "{what}: the same registers");
+    }
+}

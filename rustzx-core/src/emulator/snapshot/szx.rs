@@ -13,6 +13,7 @@ use alloc::{str::from_utf8, vec};
 #[cfg(feature = "zlib")]
 use miniz_oxide::inflate::decompress_to_vec_zlib_with_limit;
 
+use crate::zx::memory::PAGE_SIZE;
 use rustzx_z80::IntMode;
 
 const ZXST_MID_128K: u32 = 2;
@@ -259,12 +260,13 @@ fn process_amxm_block<H: Host>(emulator: &mut Emulator<H>, block_data: &[u8]) {
     }
 }
 
-// Process ZXSTRAMPAGE (RAMP)
-fn process_ramp_block<H: Host>(
-    emulator: &mut Emulator<H>,
+// Reads a ZXSTRAMPAGE (RAMP) block: the page it fills, after remapping a 48K's page numbers,
+// and its 16K, unpacked. A page the machine doesn't have, or data short of a page, is an error.
+fn read_ramp_block<H: Host>(
+    emulator: &Emulator<H>,
     machine_id: u32,
     block_data: &[u8],
-) -> Result<()> {
+) -> Result<(u8, Vec<u8>)> {
     // wFlags
     let flags = u16::from_le_bytes([block_data[0], block_data[1]]) as u32;
 
@@ -279,32 +281,20 @@ fn process_ramp_block<H: Host>(
             _ => page_num,
         };
     }
-
-    let page_data = emulator.controller.memory.ram_page_data_mut(page_num);
-
-    if flags & ZXSTRF_COMPRESSED != 0 {
-        if cfg!(not(feature = "zlib")) {
-            return Err(SnapshotLoadError::ZlibNotSupported.into());
-        }
-        #[cfg(feature = "zlib")]
-        {
-            let compressed_data: Vec<u8> = block_data[3..].to_vec();
-            match decompress_zlib_stream(&compressed_data) {
-                Ok(data) => {
-                    return {
-                        page_data.copy_from_slice(&data[..page_data.len()]);
-                        Ok(())
-                    }
-                }
-                Err(_) => return Err(SnapshotLoadError::InvalidSZXFile.into()),
-            }
-        }
-    } else {
-        let uncompressed_data: Vec<u8> = block_data[3..].to_vec();
-        page_data.copy_from_slice(&uncompressed_data[..page_data.len()]);
+    if (page_num as usize + 1) * PAGE_SIZE > emulator.controller.memory.ram().len() {
+        return Err(SnapshotLoadError::InvalidSZXFile.into());
     }
 
-    Ok(())
+    let mut data = if flags & ZXSTRF_COMPRESSED != 0 {
+        decompress_zlib_stream(&block_data[3..])?
+    } else {
+        block_data[3..].to_vec()
+    };
+    if data.len() < PAGE_SIZE {
+        return Err(SnapshotLoadError::InvalidSZXFile.into());
+    }
+    data.truncate(PAGE_SIZE);
+    Ok((page_num, data))
 }
 
 #[cfg(feature = "zlib")]
@@ -317,93 +307,116 @@ fn decompress_zlib_stream(bytes: &[u8]) -> Result<Vec<u8>> {
     }
 }
 
-/// SZX snapshot loading function
+#[cfg(not(feature = "zlib"))]
+fn decompress_zlib_stream(_: &[u8]) -> Result<Vec<u8>> {
+    Err(SnapshotLoadError::ZlibNotSupported.into())
+}
+
+/// The fewest bytes a block the loader reads must hold, by its id: what its reader indexes.
+fn least_size(id: &str) -> usize {
+    match id {
+        "Z80R" => 37,
+        "SPCR" => 4,
+        "AY\0\0" => 18,
+        "KEYB" => 5,
+        "AMXM" => 1,
+        "RAMP" => 3,
+        _ => 0,
+    }
+}
+
+/// A block read and checked, ready to apply.
+enum Block {
+    Z80r(Vec<u8>),
+    Spcr(Vec<u8>),
+    #[cfg(all(feature = "sound", feature = "ay"))]
+    Ay(Vec<u8>),
+    Keyb(Vec<u8>),
+    Amxm(Vec<u8>),
+    Page(u8, Vec<u8>),
+}
+
+/// SZX snapshot loading function. Every block is read and checked before any is applied, so
+/// a damaged snapshot is an error that leaves the machine as it was.
 pub fn load<H, A>(emulator: &mut Emulator<H>, mut asset: A) -> Result<()>
 where
     H: Host,
     A: LoadableAsset + SeekableAsset,
 {
-    let _ = asset.seek(SeekFrom::End(0))?;
-    let mut cursor_pos = 0;
+    let length = asset.seek(SeekFrom::End(0))?;
     asset.seek(SeekFrom::Start(0))?;
 
     // ZXST Header
     let mut header = [0u8; ZXST_HEADER_SIZE];
-    asset.read_exact(&mut header)?;
-    cursor_pos += ZXST_HEADER_SIZE;
-    let magic_bytes = &[header[0], header[1], header[2], header[3]];
-    let magic_str = from_utf8(magic_bytes);
-
-    match magic_str {
-        Ok(magic_data) => {
-            if !magic_data.eq("ZXST") {
-                return Err(SnapshotLoadError::InvalidSZXFile.into());
-            }
-        }
-        Err(_) => return Err(SnapshotLoadError::InvalidSZXFile.into()),
+    if asset.read_exact(&mut header).is_err() || &header[..4] != b"ZXST" {
+        return Err(SnapshotLoadError::InvalidSZXFile.into());
     }
-    let _ = header[4];
-    let _ = header[5];
+    let mut cursor_pos = ZXST_HEADER_SIZE;
 
     let machine_id = header[6] as u32;
     if machine_id > ZXST_MID_128K {
         return Err(SnapshotLoadError::MachineNotSupported.into());
     }
 
-    // ZXST Block Header
-    asset.seek(SeekFrom::Start(cursor_pos))?;
-    let mut block_header = [0u8; ZXST_BLOCK_HEADER_SIZE];
-    while asset.read_exact(&mut block_header).is_ok() {
-        let size: u32 = u32::from_le_bytes([
+    let mut blocks = Vec::new();
+    while cursor_pos < length {
+        // ZXST Block Header
+        let mut block_header = [0u8; ZXST_BLOCK_HEADER_SIZE];
+        if asset.read_exact(&mut block_header).is_err() {
+            return Err(SnapshotLoadError::InvalidSZXFile.into());
+        }
+        cursor_pos += ZXST_BLOCK_HEADER_SIZE;
+        let size = u32::from_le_bytes([
             block_header[4],
             block_header[5],
             block_header[6],
             block_header[7],
-        ]);
-        let id_bytes = &[
-            block_header[0],
-            block_header[1],
-            block_header[2],
-            block_header[3],
-        ];
-        let id_str = from_utf8(id_bytes).unwrap().to_uppercase();
-        cursor_pos += ZXST_BLOCK_HEADER_SIZE;
-
-        // ZXST Block Data
-        asset.seek(SeekFrom::Start(cursor_pos))?;
-        let mut block_data = vec![0; size as usize];
-
-        if asset.read_exact(&mut block_data).is_err() {
+        ]) as usize;
+        let id = match from_utf8(&block_header[..4]) {
+            Ok(id) => id.to_uppercase(),
+            Err(_) => return Err(SnapshotLoadError::InvalidSZXFile.into()),
+        };
+        // A size past the file's end is damage, not a block to allocate for.
+        if size > length - cursor_pos {
             return Err(SnapshotLoadError::InvalidSZXFile.into());
         }
 
-        match id_str.as_str() {
-            "Z80R" => {
-                process_z80r_block(emulator, &block_data);
-            }
-            "SPCR" => {
-                process_spcr_block(emulator, machine_id, &block_data);
-            }
-            #[cfg(all(feature = "sound", feature = "ay"))]
-            "AY\0\0" => {
-                process_ay_block(emulator, machine_id, &block_data);
-            }
-            "KEYB" => {
-                process_keyb_block(emulator, &block_data);
-            }
-            "AMXM" => {
-                process_amxm_block(emulator, &block_data);
-            }
-            "RAMP" => {
-                process_ramp_block(emulator, machine_id, &block_data)?;
-            }
-
-            _ => (),
+        // ZXST Block Data
+        let mut block_data = vec![0; size];
+        if asset.read_exact(&mut block_data).is_err() || size < least_size(&id) {
+            return Err(SnapshotLoadError::InvalidSZXFile.into());
         }
-        // skip block data
-        cursor_pos += size as usize;
+        cursor_pos += size;
 
-        asset.seek(SeekFrom::Start(cursor_pos))?;
+        blocks.push(match id.as_str() {
+            "Z80R" => Block::Z80r(block_data),
+            "SPCR" => Block::Spcr(block_data),
+            #[cfg(all(feature = "sound", feature = "ay"))]
+            "AY\0\0" => Block::Ay(block_data),
+            "KEYB" => Block::Keyb(block_data),
+            "AMXM" => Block::Amxm(block_data),
+            "RAMP" => {
+                let (page, data) = read_ramp_block(emulator, machine_id, &block_data)?;
+                Block::Page(page, data)
+            }
+            _ => continue,
+        });
+    }
+
+    for block in blocks {
+        match block {
+            Block::Z80r(data) => process_z80r_block(emulator, &data),
+            Block::Spcr(data) => process_spcr_block(emulator, machine_id, &data),
+            #[cfg(all(feature = "sound", feature = "ay"))]
+            Block::Ay(data) => process_ay_block(emulator, machine_id, &data),
+            Block::Keyb(data) => process_keyb_block(emulator, &data),
+            Block::Amxm(data) => process_amxm_block(emulator, &data),
+            Block::Page(page, data) => emulator
+                .controller
+                .memory
+                .ram_page_data_mut(page)
+                .copy_from_slice(&data),
+        }
     }
     emulator.controller.refresh_memory_dependent_devices();
     Ok(())
