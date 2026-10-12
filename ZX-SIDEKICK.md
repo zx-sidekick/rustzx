@@ -161,6 +161,12 @@ The corrections were checked against the MEMPTR document (Boo-boo, trans. Vladim
 
 **Change.** The tape enum's dispatch to `Tap` or `Empty`, and its two `From` impls, are written out (a small `match` macro), and `enum_dispatch` is dropped. The core's default dependencies now hold no procedural macro at all. Every `rustzx-test` suite passes unchanged.
 
+### 19. A damaged SZX snapshot is an error, and changes nothing
+
+**Problem.** The SZX loader panicked on damaged snapshots: on a block id that isn't text, on any block shorter than the bytes its reader indexes (`Z80R`, `SPCR`, `AY`, `KEYB`, `AMXM`, `RAMP`), on a `RAMP` page the machine doesn't have, and on page data short of 16K. It also allocated whatever a block's size field said, up to 4 GB. It applied each block as it read it, so one that failed part-way left the machine half loaded. ZX Sidekick opens any `.szx` a player chooses.
+
+**Change.** `szx::load` reads and checks every block before applying any. A block must fit in the file and hold at least what its reader reads. A page must be one the machine has and unpack to 16K; a 48K snapshot has pages 5, 2 and 0 only. Anything else is `InvalidSZXFile`, and the machine is as it was, its frame included: `load_snapshot` starts a new frame only once a snapshot has loaded. Two kinds of damage that loaded before are now refused: a cut block header at the end, and a 48K snapshot's page other than 5, 2 or 0 (page 1 used to land on the `0x8000` bank). Whole snapshots load the same. Tested in `rustzx-test/tests/szx_save.rs`: eleven kinds of damage (cuts in the header, a block header and a block; an id that isn't text; a size past the end; short `Z80R` and `RAMP` blocks; pages 1 and 9 in a 48K snapshot; less than a page of data; good registers with PC elsewhere, then a bad page). Each is refused, with memory and registers unchanged. Every `rustzx-test` suite passes unchanged.
+
 ## Using it
 
 ZX Sidekick depends on the crates directly, both from the same commit, so `rustzx-core` is built on this `rustzx-z80`:
